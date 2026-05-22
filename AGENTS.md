@@ -16,6 +16,38 @@
 
 ---
 
+## Project-Specific Agents (PRIMARY — always use these)
+
+These agents are in `.opencode/agents/` and are the DEFAULT for this project.
+Do NOT use global pipeline agents for this project's work.
+
+| Agent              | Model                         | Role                                      |
+| ------------------ | ----------------------------- | ----------------------------------------- |
+| **tech-lead**      | `anthropic/claude-opus-4-6`   | Task enrichment, code review, arch judgment |
+| **coder-backend**  | `anthropic/claude-sonnet-4-6` | Laravel: services, controllers, jobs, models |
+| **coder-frontend** | `anthropic/claude-opus-4-6`   | Vue + Inertia + shadcn-vue + Tailwind     |
+| **qa**             | `anthropic/claude-sonnet-4-6` | Test writing, regression audits           |
+
+**Fallback:** tech-lead has `openai/gpt-5.4` variant.
+
+### Workflow Per Task
+
+```
+1. tech-lead: enriches task with Technical Guidance
+2. qa: writes tests (RED — tests fail, nothing implemented)
+3. coder-backend: implements backend until tests pass
+4. coder-frontend: implements frontend
+5. tech-lead: reviews diff, approves or requests changes
+6. On approval: "feat(scope): description - done" → merge to dev
+```
+
+### Dispatch Rules
+- Backend-only task (API, jobs, services) → skip step 4
+- Frontend-only task (UI, components) → skip step 3
+- Full-stack task → both coders, sequential (backend first)
+
+---
+
 ## Cold-Start Protocol (READ THIS FIRST)
 
 Every new session:

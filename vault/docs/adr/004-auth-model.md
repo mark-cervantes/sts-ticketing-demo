@@ -9,18 +9,29 @@
 **Free-tier SaaS model:** anyone can register and log in. No roles. Every user
 is equal. Authorization is per-issue (ownership + sharing), not per-role.
 
-### Access Rules
-1. Owner of an issue → full access (CRUD)
-2. Shared user with `edit` → can update issue, add comments
-3. Shared user with `view` → can view issue, add comments
-4. Public issue + logged in → view-only, can add comments
-5. Private issue + no share → 403
+### Access Rules — Ladderized Permissions
+
+Permissions are hierarchical: `view → comment → edit`
+Each level includes all capabilities of the levels to its left.
+
+| Permission | Can View | Can Comment | Can Edit |
+| ---------- | -------- | ----------- | -------- |
+| `view`     | ✅       | ❌          | ❌       |
+| `comment`  | ✅       | ✅          | ❌       |
+| `edit`     | ✅       | ✅          | ✅       |
+
+### Access Resolution
+1. Owner of an issue → full access (implicit `edit`)
+2. Shared user → access per `issue_shares.permission` (view, comment, or edit)
+3. Public issue + logged in → `view` level only (read-only, no commenting)
+4. Private issue + no share → 403
 
 ### Implementation
 - Laravel Breeze (session-based, Inertia-compatible)
 - No role column on users table
+- `issue_shares.permission` enum: `view | comment | edit`
 - Authorization via `IssuePolicy` checking ownership + shares + visibility
-- Comments: any user with access to the issue can comment
+- Policy methods: `view()`, `comment()`, `update()` — each checks the ladder level
 
 ## Rationale
 

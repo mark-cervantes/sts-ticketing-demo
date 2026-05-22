@@ -46,11 +46,15 @@ real-time SSE updates.
 - No roles — every user is equal
 - Session-based auth via Laravel Breeze + Inertia
 
-### 3.2 Authorization Rules
-- Users **own** issues they create → full access
-- Shared users → access per `issue_shares.permission` (view or edit)
-- Public issues → any logged-in user has view-only access
+### 3.2 Authorization Rules (Ladderized)
+
+Permissions: `view → comment → edit` (each includes all capabilities to its left)
+
+- Users **own** issues they create → full access (implicit `edit`)
+- Shared users → access per `issue_shares.permission` (view, comment, or edit)
+- Public issues → any logged-in user has `view` level only (no commenting)
 - Private issues → only owner + explicitly shared users
+- To comment on a public issue, user needs explicit share with `comment` or `edit`
 
 ---
 
@@ -107,15 +111,20 @@ Seeded defaults: billing, technical, account, general, bug, feature-request
 UI displays `user.name` as the comment author.
 
 ### 4.5 `issue_shares`
-| Field      | Type             | Notes                       |
-| ---------- | ---------------- | --------------------------- |
-| id         | bigint PK        |                             |
-| issue_id   | FK → issues      |                             |
-| user_id    | FK → users       | The person receiving access |
-| permission | enum: view, edit |                             |
-| created_at | timestamp        |                             |
+| Field      | Type                        | Notes                       |
+| ---------- | --------------------------- | --------------------------- |
+| id         | bigint PK                   |                             |
+| issue_id   | FK → issues                 |                             |
+| user_id    | FK → users                  | The person receiving access |
+| permission | enum: view, comment, edit   | Ladderized (each includes left) |
+| created_at | timestamp                   |                             |
 
 Unique constraint on (issue_id, user_id). Sharing notifies the target user.
+
+**Permission ladder:** view → comment → edit. Each level includes all left capabilities.
+- `view`: read-only
+- `comment`: can view + add comments
+- `edit`: can view + comment + update the issue
 
 ### 4.6 Indexes
 ```
