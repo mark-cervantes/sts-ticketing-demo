@@ -19,14 +19,18 @@ Setting up the Issue Intake & Smart Summary System project from assessment PRD.
 - 2026-05-23 00:17 — Ollama Cloud API key received
 - 2026-05-23 00:24 — Integration-first testing strategy agreed (ADR-009)
 - 2026-05-23 00:26 — AI layer Manager pattern details finalized, SRS/SPEC updated
+- 2026-05-23 00:36 — Sprint workflow model agreed: deployable-unit sprints, XX.XX.XX numbering (ADR-010)
+- 2026-05-23 00:40 — PLAN.md written with 5 sprints, AGENTS.md created, mempalace persisted
 
 ## Open Items
-- [ ] User approves SPEC.md (BLOCKING — nothing proceeds until approved)
-- [x] Delete old PRD (done)
-- [ ] Initialize project AGENTS.md with project-specific config
+- [ ] User approves SPEC.md + PLAN.md (BLOCKING)
+- [x] Delete old PRD
+- [x] Initialize project AGENTS.md with project-specific config
+- [x] Sprint plan (PLAN.md) with sprint/task structure
+- [x] Persist key decisions to mempalace (decisions, credentials, cold-start)
 - [ ] Setup MCP servers / skills for Laravel development
-- [ ] Create sprint plan from SPEC
-- [ ] Begin implementation
+- [ ] Create actual task files in backlog/
+- [ ] Create dev branch and begin implementation
 
 ## Key Decisions
 - No roles — ownership + sharing model (ADR-004)
