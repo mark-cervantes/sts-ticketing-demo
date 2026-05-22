@@ -9,6 +9,7 @@ use App\Enums\Visibility;
 use Carbon\CarbonImmutable;
 use Database\Factories\IssueFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -118,5 +119,29 @@ class Issue extends Model
     public function shares(): HasMany
     {
         return $this->hasMany(IssueShare::class);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scopes
+    // -------------------------------------------------------------------------
+
+    /**
+     * Scope to issues accessible by the given user.
+     *
+     * Returns issues where the user is the owner, OR has a share row,
+     * OR the issue is public. Uses distinct() to prevent duplicates when
+     * both owner and shared conditions match the same row.
+     *
+     * @see SRS §8.2 I-18 / ADR-004 §Access Resolution
+     */
+    public function scopeAccessibleBy(Builder $query, User $user): Builder
+    {
+        return $query->distinct()->where(function (Builder $q) use ($user): void {
+            $q->where('user_id', $user->id)
+                ->orWhereHas('shares', function (Builder $sq) use ($user): void {
+                    $sq->where('user_id', $user->id);
+                })
+                ->orWhere('visibility', Visibility::Public);
+        });
     }
 }
