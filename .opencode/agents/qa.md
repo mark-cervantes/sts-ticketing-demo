@@ -9,6 +9,10 @@ tools:
   edit: true
   glob: true
   grep: true
+  serena_*: true
+  postgres_*: true
+  playwright_*: true
+  context7_*: true
 permissions:
   read:
     - /home/cmark/projects/ticketing-system/**

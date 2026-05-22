@@ -9,7 +9,9 @@ tools:
   edit: true
   glob: true
   grep: true
-  serena: true
+  serena_*: true
+  postgres_*: true
+  context7_*: true
 permissions:
   read: allow
   write: ask
