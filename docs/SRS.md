@@ -326,7 +326,182 @@ Recommended for demo quality:
 
 ---
 
-## 7. Acceptance Criteria Summary
+## 7. AI / Summary Generation — Implementation Detail
+
+### 7.1 File Structure
+```
+app/
+├── Contracts/
+│   └── SummaryGeneratorInterface.php
+├── Services/Summary/
+│   ├── SummaryManager.php           ← extends Illuminate\Support\Manager
+│   ├── Drivers/
+│   │   ├── LlmDriver.php
+│   │   └── RulesDriver.php
+│   └── SummaryResult.php
+├── Facades/Summary.php
+├── Jobs/GenerateSummaryJob.php
+├── Events/SummaryCompleted.php
+├── Exceptions/SummaryGenerationException.php
+└── Providers/SummaryServiceProvider.php
+```
+
+### 7.2 SummaryManager Behavior
+- `getDefaultDriver()` → reads `config('summary.default')`
+- `createLlmDriver()` → builds LlmDriver with HTTP client + config
+- `createRulesDriver()` → builds RulesDriver (no dependencies)
+- Auto-fallback: if `llm` selected but `LLM_API_KEY` is null/empty → return rules driver
+- Usage: `Summary::generate($issue)` or `Summary::driver('rules')->generate($issue)`
+
+### 7.3 LlmDriver Behavior
+- Injects Laravel HTTP client (mockable in tests)
+- Sends `POST {base_url}/chat/completions` with:
+  - `model`: from config
+  - `temperature`: 0.3
+  - `response_format`: `{ "type": "json_object" }`
+  - `messages`: system + user (from prompt template)
+- Parses JSON response → extracts `summary` and `suggested_next_action`
+- Throws `SummaryGenerationException` on: HTTP error, timeout, malformed JSON, missing keys
+- Does NOT retry — retry logic is in the job layer
+
+### 7.4 RulesDriver Behavior
+- Deterministic: same input always produces same output
+- Category-aware summary templates:
+  - billing → "Billing issue reported: {lead_sentence}. Relates to account charges or payment."
+  - technical → "Technical issue: {lead_sentence}. Involves system functionality or errors."
+  - (etc. for each seeded category, with a generic fallback)
+- Priority-aware action suggestions:
+  - critical → "Escalate immediately to {category} team lead for urgent triage."
+  - high → "Assign to {category} specialist for priority review within 4 hours."
+  - medium → "Schedule for review in next {category} team standup."
+  - low → "Add to {category} backlog for routine processing."
+- Description analysis: extracts first sentence as lead, trims to summary length
+- MUST produce output a human would find useful — this is evaluated
+
+### 7.5 GenerateSummaryJob
+```
+tries: 3
+backoff: [10, 30, 90]
+
+handle():
+  1. issue.summary_status = 'processing' (save)
+  2. try: result = Summary::generate(issue)
+  3. catch SummaryGenerationException:
+     - if attempts < tries → rethrow (Laravel retries)
+     - if attempts >= tries → result = Summary::driver('rules')->generate(issue)
+  4. issue.summary = result.summary
+  5. issue.suggested_next_action = result.suggestedNextAction
+  6. issue.summary_status = 'ready' (save)
+  7. event(new SummaryCompleted(issue))
+
+failed(Throwable):
+  1. issue.summary_status = 'failed' (save)
+  2. Log::error with issue_id + error message
+```
+
+### 7.6 Prompt Template
+```php
+// config/prompts/summary.php
+return [
+    'system' => 'You are a support ticket analyst. Produce concise, actionable summaries. Respond only in valid JSON.',
+    'user' => <<<'PROMPT'
+Analyze this support issue:
+
+Title: {title}
+Category: {category}
+Priority: {priority}
+Description:
+{description}
+
+Respond in this exact JSON format:
+{
+  "summary": "1-2 sentence summary of the core issue",
+  "suggested_next_action": "One specific, concrete next step to resolve this"
+}
+PROMPT,
+];
+```
+
+---
+
+## 8. Testing — Comprehensive Plan
+
+### 8.1 Strategy
+Integration-first. Integration tests are the primary regression firewall for
+AI-assisted development. They catch cross-layer regressions — the #1 failure
+mode when AI agents modify multiple files per feature.
+
+### 8.2 Integration Tests (~35 scenarios)
+
+Real DB (RefreshDatabase), sync queue, mocked external APIs only.
+
+**Issue Lifecycle (I-01 to I-05):**
+- I-01: Full lifecycle: register → login → create → defaults verified → job dispatched → job runs → summary populated → view with summary
+- I-02: Kanban status transitions: open → in_progress → resolved, each persisted and verified
+- I-03: Comment thread: create issue → add 3 comments → view → all loaded with user.name → query count assertion (no N+1)
+- I-04: Description update re-triggers: create → job → ready → update desc → status=pending → new job → new summary
+- I-05: Status-only update no re-trigger: create → job → ready → update status → still ready → no new job
+
+**Sharing & Access (I-06 to I-08):**
+- I-06: Private sharing flow: A creates private → B gets 403 → A shares (view) → B sees → B can't edit (403) → A upgrades to edit → B edits
+- I-07: Public sharing: A creates public → B views → B can't edit → A shares (edit) → B edits
+- I-08: Visibility toggle: private + shared B → public → C views → private → C loses access
+
+**Categories (I-09):**
+- I-09: Create with existing cat → create new inline → use it → delete unused → delete used gets 409
+
+**AI Pipeline (I-10 to I-11):**
+- I-10: Fallback path: SUMMARY_DRIVER=llm, no key → create → rules engine → summary populated → ready
+- I-11: Retry + fallback: mock LLM fails 3x → retries exhaust → rules fallback → summary populated
+
+**Concurrency & Edge Cases (I-12 to I-18):**
+- I-12: Optimistic locking: A fetches → B updates → A submits stale → 409
+- I-13: Filter accuracy: seed 15 issues → filter status+priority → exact set → add category → narrowed
+- I-14: needs_attention priority: create low → false → update high → true → back to low → false
+- I-15: needs_attention deadline: create with future deadline → false → time travel → scheduler → true
+- I-16: Soft delete: create → delete → not in list → direct 404 → still in DB
+- I-17: Pagination: seed 30 → page 1 (15) → page 2 (15) → no duplicates
+- I-18: Access isolation: A creates 3 private → B creates 2 private → A lists → sees only own + public
+
+### 8.3 Feature Tests (~45 scenarios)
+
+Endpoint-level validation and HTTP status code verification.
+
+**Issue CRUD (~20):** create validation (missing fields, invalid enums, empty after trim, past deadline, non-existent category), update (partial, re-trigger rules, optimistic lock), delete (auth, soft), response shape
+**Comments (~7):** body validation (empty, trim), auth injection, access on non-existent/inaccessible issue, response shape
+**Categories (~5):** list, create with slug, duplicate (case-insensitive), delete unused, delete guard
+**Sharing (~8):** valid share, self-share, non-existent email, upsert, remove, permission boundaries
+**Auth (~5):** register, login, duplicate email, logout, unauthenticated access
+
+### 8.4 Unit Tests (~20 scenarios)
+
+No DB, no HTTP.
+
+**AI Drivers (~10):** LlmDriver JSON parsing, error throwing (HTTP 500, timeout, malformed JSON), config injection, prompt structure; RulesDriver output varies by category/priority, handles edge descriptions
+**SummaryManager (~4):** default driver resolution, explicit driver, auto-fallback (no key)
+**Models (~4):** needs_attention computation (all combinations), category slug generation
+**Value Objects (~2):** SummaryResult construction, immutability
+
+### 8.5 Test Infrastructure
+- `RefreshDatabase` trait on every feature/integration test
+- Model factories: `UserFactory`, `IssueFactory`, `CommentFactory`, `CategoryFactory`, `IssueShareFactory`
+- `Queue::fake()` for dispatch assertions
+- `Http::fake()` with fixtures for LLM responses
+- `DB::getQueryLog()` for N+1 assertions
+- `Carbon::setTestNow()` for time-dependent tests
+- Single command: `php artisan test`
+
+### 8.6 Agent Testing Contract
+1. Run `php artisan test` BEFORE and AFTER every change
+2. Any previously-passing test now failing → change is wrong → fix before reporting done
+3. Do NOT modify existing tests unless SPEC explicitly changed
+4. Do NOT delete tests
+5. New features MUST include integration tests for full user path
+6. Integration tests: real DB, sync queue, mocked external APIs only
+
+---
+
+## 9. Acceptance Criteria Summary
 
 The system is complete when:
 1. `docker compose up -d` produces a working app from zero
@@ -339,4 +514,5 @@ The system is complete when:
 8. Comments work on issue detail
 9. Sharing works: share by email, recipient sees the issue
 10. All 7 mandated tests pass via `php artisan test`
-11. README is sufficient to run the project without questions
+11. Full test suite (~100 tests) passes
+12. README is sufficient to run the project without questions

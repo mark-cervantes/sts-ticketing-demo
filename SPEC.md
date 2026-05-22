@@ -225,56 +225,127 @@ PATCH checks `updated_at` — if record modified since client fetch → 409 Conf
 
 ## 7. AI / Automation Layer
 
-### 7.1 Architecture
+### 7.1 Architecture — Laravel Manager Pattern
+
+Uses the **Manager pattern** (same pattern as Laravel's Cache, Queue, Mail, Filesystem managers)
+for idiomatic driver-based service resolution.
+
 ```
-SummaryFacade (app-facing)
-  └── resolves driver from config
-        ├── LlmSummaryGenerator      ← OpenAI-compatible (Ollama Cloud / OpenRouter)
-        └── RuleBasedSummaryGenerator ← Deterministic keyword/category fallback
+app/
+├── Contracts/
+│   └── SummaryGeneratorInterface.php    ← The seam (contract)
+├── Services/
+│   └── Summary/
+│       ├── SummaryManager.php           ← Laravel Manager (resolves drivers)
+│       ├── Drivers/
+│       │   ├── LlmDriver.php           ← OpenAI-compatible HTTP call
+│       │   └── RulesDriver.php         ← Deterministic keyword/category fallback
+│       └── SummaryResult.php            ← Immutable value object (DTO)
+├── Facades/
+│   └── Summary.php                      ← Laravel Facade binding
+├── Jobs/
+│   └── GenerateSummaryJob.php           ← Queued, retryable, fallback-aware
+├── Events/
+│   └── SummaryCompleted.php             ← Triggers SSE push
+├── Exceptions/
+│   └── SummaryGenerationException.php   ← Typed exception for driver failures
+└── Providers/
+    └── SummaryServiceProvider.php       ← Registers manager + drivers
 ```
 
-Both implement `SummaryGeneratorInterface`:
+### 7.2 Contract
+
 ```php
 interface SummaryGeneratorInterface
 {
+    /** @throws SummaryGenerationException */
     public function generate(Issue $issue): SummaryResult;
 }
 ```
 
-### 7.2 Async Flow
+### 7.3 Value Object
+
+```php
+final readonly class SummaryResult
+{
+    public function __construct(
+        public string $summary,
+        public string $suggestedNextAction,
+        public string $driver,  // 'llm' or 'rules' — which driver produced this
+    ) {}
+}
+```
+
+### 7.4 Async Flow
 1. Issue created → API responds 201 with `summary_status: pending`
 2. `GenerateSummaryJob` dispatched to Redis queue
-3. Job calls `SummaryFacade::generate($issue)`
-4. Facade resolves configured driver
+3. Job updates issue `summary_status = processing`
+4. Job calls `Summary::generate($issue)` (Facade → Manager → Driver)
 5. On success: issue updated with summary + next_action, `summary_status = ready`
-6. On failure: `summary_status = failed`, error logged
-7. SSE event pushed to connected clients
+6. On failure: exception thrown, job retries per backoff schedule
+7. On final retry failure: fallback to rules driver, still mark `ready`
+8. `SummaryCompleted` event fired → SSE push to connected clients
 
-### 7.3 Fallback Behavior
-- No API key configured → auto-fallback to rules engine
-- LLM API failure (timeout, 5xx) → retry, then fallback to rules engine
-- Rules engine always succeeds (deterministic)
+### 7.5 Fallback Behavior
+- Config `SUMMARY_DRIVER=llm` but no `LLM_API_KEY` → auto-fallback to rules driver
+- LLM API returns error / timeout → job retries, then fallback to rules driver
+- Rules driver always succeeds (deterministic, no external dependency)
+- Fallback is **transparent** — app code doesn't know which driver ran
 
-### 7.4 Retry Policy
-- Max 3 attempts, exponential backoff (10s, 30s, 90s)
-- After exhaustion: fallback to rules engine result
-- Failed jobs visible in Horizon
+### 7.6 Retry Policy
+- Max 3 attempts with exponential backoff: 10s, 30s, 90s
+- On final attempt failure: catch exception, call `Summary::driver('rules')` explicitly
+- After rules fallback: mark `summary_status = ready` (not `failed`)
+- Only mark `failed` if rules engine also fails (shouldn't — it's deterministic)
+- Failed/exhausted jobs visible in Horizon dashboard
 
-### 7.5 Configuration
+### 7.7 LLM Driver Details
+- Uses Laravel HTTP client (injectable, mockable)
+- Endpoint: `POST {base_url}/chat/completions` (OpenAI-compatible)
+- Temperature: 0.3 (low creativity, high consistency)
+- Response format: `json_object` (structured, no free-text parsing)
+- Timeout: configurable (default 30s)
+- Throws `SummaryGenerationException` on any failure — driver does not handle retries
+
+### 7.8 Configuration
+
 ```env
 SUMMARY_DRIVER=llm          # llm | rules
 LLM_BASE_URL=https://...    # Any OpenAI-compatible endpoint
 LLM_API_KEY=xxx
 LLM_MODEL=model-name
+LLM_TIMEOUT=30
 ```
 
-### 7.6 Prompt Template
-Committed at `config/prompts/summary.php`. Output:
-- `summary`: 1-2 sentences
-- `suggested_next_action`: single concrete step
+```php
+// config/summary.php
+return [
+    'default' => env('SUMMARY_DRIVER', 'rules'),
+    'drivers' => [
+        'llm' => [
+            'base_url' => env('LLM_BASE_URL', 'https://api.openai.com/v1'),
+            'api_key'  => env('LLM_API_KEY'),
+            'model'    => env('LLM_MODEL', 'gpt-4o-mini'),
+            'timeout'  => env('LLM_TIMEOUT', 30),
+        ],
+        'rules' => [],
+    ],
+];
+```
 
-### 7.7 Rules-Based Engine
-Uses category keywords, priority, description length/content. Produces genuinely useful output — not placeholder stubs.
+### 7.9 Prompt Template
+Committed at `config/prompts/summary.php`. Structured prompt with:
+- System message: role definition (support ticket analyst)
+- User message: title, category, priority, description
+- Output format: JSON with `summary` and `suggested_next_action` keys
+- Output constraints: summary = 1-2 sentences, next_action = single concrete step
+
+### 7.10 Rules-Based Engine
+Deterministic generator producing genuinely useful output:
+- Category + priority matrix → domain-specific summary templates
+- Description analysis: extract lead sentence, key terms
+- Action suggestions: concrete, category-aware (not generic "review this issue")
+- Must pass quality bar: output is something you'd show a human user
 
 ---
 
@@ -360,29 +431,105 @@ The dashboard IS the app. All interactions happen here.
 
 ---
 
-## 10. Testing
+## 10. Testing — Integration-First Strategy
 
-### 10.1 Required (Assessment Mandates 7)
+Testing is the primary regression firewall for AI-assisted development.
+Integration tests are the largest group — they catch cross-layer regressions
+which are AI's #1 failure mode when modifying multiple files per feature.
 
-| # | Test                                           | Signal                        |
-|---|------------------------------------------------|-------------------------------|
-| 1 | Successful issue create                        | CRUD works, defaults applied  |
-| 2 | Validation failure (missing/invalid field)     | Input handling thorough       |
-| 3 | List filtering with 2+ combined filters        | Query composition works       |
-| 4 | Adding comment to existing issue               | Relationship creation works   |
-| 5 | Single-issue view loads comments without N+1   | Eager loading verified        |
-| 6 | Creating issue dispatches summary job          | Async boundary correct        |
-| 7 | Summary job populates fields + status          | Job execution end-to-end      |
+### 10.1 Test Priority (Highest → Lowest)
 
-### 10.2 Stretch Tests
-- Sharing: share issue, verify access
-- Visibility: private not visible to unshared user
-- Optimistic locking: concurrent update → 409
-- Category inline creation, duplicate rejection
-- `needs_attention` recomputation on priority change
-- Scheduler flags overdue issues
-- Soft delete: excluded from list
-- Drag-drop status change via API
+```
+Integration tests  → catches cross-layer regressions
+Feature tests      → catches endpoint behavior + validation edge cases
+Unit tests         → catches isolated logic correctness
+```
+
+### 10.2 Assessment-Mandated Tests (7 Required)
+
+| # | Test                                           | Signal                        | Layer       |
+|---|------------------------------------------------|-------------------------------|-------------|
+| 1 | Successful issue create                        | CRUD works, defaults applied  | Integration |
+| 2 | Validation failure (missing/invalid field)     | Input handling thorough       | Feature     |
+| 3 | List filtering with 2+ combined filters        | Query composition works       | Integration |
+| 4 | Adding comment to existing issue               | Relationship creation works   | Integration |
+| 5 | Single-issue view loads comments without N+1   | Eager loading verified        | Integration |
+| 6 | Creating issue dispatches summary job          | Async boundary correct        | Integration |
+| 7 | Summary job populates fields + status          | Job execution end-to-end      | Integration |
+
+### 10.3 Integration Tests (~35 scenarios)
+
+Full user-path workflows. Real DB, real queue (sync driver), mocked external APIs.
+
+| ID   | Scenario                                | Steps                                                                                              |
+|------|-----------------------------------------|----------------------------------------------------------------------------------------------------|
+| I-01 | Issue full lifecycle                    | Register → login → create → verify defaults → job dispatched → job runs → summary populated → view |
+| I-02 | Kanban status drag                      | Create (open) → update to in_progress → update to resolved → verify each persisted                 |
+| I-03 | Comment thread                          | Create issue → add 3 comments → view → all loaded with user names → no N+1                         |
+| I-04 | Description update re-triggers summary  | Create → job runs → summary ready → update desc → status reset → new job → new summary             |
+| I-05 | Status update does NOT re-trigger       | Create → job runs → ready → update status only → status still ready → no new job                   |
+| I-06 | Sharing flow (private)                  | A creates private → B can't see (403) → A shares (view) → B sees → B can't edit → upgrade → edits |
+| I-07 | Sharing flow (public)                   | A creates public → B views → B can't edit → A shares (edit) → B edits                              |
+| I-08 | Visibility toggle                       | Private + shared with B → public → C (unshared) views → private → C loses access                   |
+| I-09 | Category lifecycle                      | Create with existing → create new inline → use it → delete unused → delete used (409)               |
+| I-10 | AI fallback (no key)                    | SUMMARY_DRIVER=llm, no key → create → rules engine produces summary → status=ready                 |
+| I-11 | AI retry + fallback                     | Mock LLM fail 3x → create → retries → falls back to rules → summary populated                      |
+| I-12 | Optimistic locking                      | A fetches → B updates → A submits stale updated_at → 409                                           |
+| I-13 | Filtering accuracy                      | Seed 15 issues → filter status+priority → exact set → add category → narrowed                       |
+| I-14 | Needs attention: priority               | Create low → false → update high → true → update low → false                                       |
+| I-15 | Needs attention: deadline               | Create with future deadline → false → time travel to threshold → scheduler → true                   |
+| I-16 | Soft delete                             | Create → delete → not in list → direct view 404 → still in DB                                      |
+| I-17 | Pagination                              | Seed 30 → page 1 (15) → page 2 (15) → no duplicates                                                |
+| I-18 | Access isolation                        | A creates 3 private → B creates 2 private → A lists → sees only own + public                        |
+
+### 10.4 Feature Tests (~45 scenarios)
+
+Endpoint-level validation and auth. Groups:
+
+**Issues CRUD:** create/update/delete validation, defaults, status codes
+**Comments:** body validation, auth injection, access checks
+**Categories:** uniqueness, slug generation, deletion guard
+**Sharing:** self-share guard, non-existent user, upsert behavior
+**Auth:** registration, login, duplicate email
+
+### 10.5 Unit Tests (~20 scenarios)
+
+Isolated logic without DB:
+
+**AI Drivers:** LLM response parsing, error throwing, rules engine output quality
+**SummaryManager:** driver resolution, auto-fallback logic
+**Models:** needs_attention computation, scopes, accessors
+**Value Objects:** SummaryResult immutability
+
+### 10.6 Test Infrastructure
+
+- `RefreshDatabase` on every feature/integration test — no shared state
+- **Factories** for all models with realistic defaults
+- `Queue::fake()` for dispatch assertion tests
+- `Http::fake()` for LLM API tests with realistic response fixtures
+- **Query count assertions** for N+1 prevention (via `DB::getQueryLog()`)
+- `Carbon::setTestNow()` for time-dependent tests (deadline/scheduler)
+- All tests runnable via single command: `php artisan test`
+
+### 10.7 Agent Testing Contract
+
+Non-negotiable rules for AI-assisted development:
+
+1. Run `php artisan test` BEFORE and AFTER every change
+2. If any previously-passing test fails → the change is wrong → fix it
+3. Do NOT modify existing tests unless the SPEC explicitly changed
+4. Do NOT delete tests — ever
+5. New features MUST include integration tests for the full user path
+6. Integration tests use real DB, sync queue, mocked external APIs only
+
+### 10.8 Target Counts
+
+| Layer       | Count | Purpose                         |
+|-------------|-------|----------------------------------|
+| Integration | ~35   | Cross-layer regression firewall  |
+| Feature     | ~45   | Endpoint behavior + validation   |
+| Unit        | ~20   | Isolated logic correctness       |
+| **Total**   | **~100** | **Full contract**             |
 
 ---
 
@@ -440,15 +587,16 @@ docker compose up -d
 
 ## 13. Design Patterns
 
-| Pattern       | Application                                            |
-| ------------- | ------------------------------------------------------ |
-| Facade        | `SummaryFacade` — hides driver resolution              |
-| Strategy      | `SummaryGeneratorInterface` + LLM/Rules drivers        |
-| Observer      | Model events for `needs_attention` recomputation       |
-| Form Request  | All validation in dedicated request classes            |
-| Service Layer | Business logic in services, thin controllers           |
-| Soft Deletes  | Issues use `SoftDeletes` trait                         |
-| Repository    | If needed for complex query composition                |
+| Pattern        | Application                                                          |
+| -------------- | -------------------------------------------------------------------- |
+| Manager        | `SummaryManager` — Laravel-idiomatic driver resolution (like Cache)  |
+| Facade         | `Summary` facade — hides manager from application code               |
+| Strategy       | `SummaryGeneratorInterface` — contract for LLM/Rules drivers         |
+| Value Object   | `SummaryResult` — immutable DTO for driver output                    |
+| Observer       | Model events for `needs_attention` recomputation                     |
+| Form Request   | All validation in dedicated request classes                          |
+| Service Layer  | Business logic in services, thin controllers                         |
+| Soft Deletes   | Issues use `SoftDeletes` trait                                       |
 
 ---
 

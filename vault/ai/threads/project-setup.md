@@ -15,9 +15,14 @@ Setting up the Issue Intake & Smart Summary System project from assessment PRD.
 - 2026-05-22 00:01 — Dashboard-first Kanban UI decision (ADR-003)
 - 2026-05-23 00:07 — SPEC.md, SRS, and ADRs created
 
+## Timeline (continued)
+- 2026-05-23 00:17 — Ollama Cloud API key received
+- 2026-05-23 00:24 — Integration-first testing strategy agreed (ADR-009)
+- 2026-05-23 00:26 — AI layer Manager pattern details finalized, SRS/SPEC updated
+
 ## Open Items
-- [ ] User approves SPEC.md
-- [ ] Delete old PRD (done)
+- [ ] User approves SPEC.md (BLOCKING — nothing proceeds until approved)
+- [x] Delete old PRD (done)
 - [ ] Initialize project AGENTS.md with project-specific config
 - [ ] Setup MCP servers / skills for Laravel development
 - [ ] Create sprint plan from SPEC

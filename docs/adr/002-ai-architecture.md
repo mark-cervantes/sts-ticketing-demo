@@ -6,14 +6,19 @@
 
 ## Decision
 
-Use **Facade + Strategy pattern** with two drivers behind a single interface.
+Use **Laravel Manager pattern + Facade + Strategy** with two drivers behind a single interface.
 
 ```
-SummaryFacade (application code calls this)
-  └── SummaryGeneratorInterface
-        ├── LlmSummaryGenerator      (Ollama Cloud / OpenRouter)
-        └── RuleBasedSummaryGenerator (deterministic fallback)
+Summary (Facade — app code calls this)
+  └── SummaryManager (extends Illuminate\Support\Manager)
+        └── resolves driver via config
+              ├── LlmDriver implements SummaryGeneratorInterface
+              └── RulesDriver implements SummaryGeneratorInterface
 ```
+
+The Manager pattern is the same pattern Laravel uses for Cache, Queue, Mail,
+and Filesystem. It provides idiomatic driver resolution, explicit driver
+selection, and testability via facade mocking.
 
 ### Driver Resolution
 1. Config `SUMMARY_DRIVER=llm|rules` selects the primary driver
