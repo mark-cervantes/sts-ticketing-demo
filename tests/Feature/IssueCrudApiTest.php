@@ -957,4 +957,345 @@ class IssueCrudApiTest extends TestCase
         // Should be well under 15 queries regardless of comment count
         $this->assertLessThan(15, $queryCount, "Expected fewer than 15 queries for show with 5 comments, got {$queryCount}");
     }
+
+    // =========================================================================
+    // G1 — ?per_page=N with max-50 clamp (02.05.00 residual gap)
+    // =========================================================================
+
+    /**
+     * G1: ?per_page=N — custom page size is respected when within [1, 50].
+     *
+     * SRS §02.05.00 gap G1: controller must read per_page from query string.
+     */
+    public function test_per_page_param_controls_page_size(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(8)->for($user)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?per_page=5');
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('data'));
+        $this->assertEquals(5, $response->json('meta.per_page'));
+    }
+
+    /**
+     * G1: ?per_page exceeding 50 is clamped to 50 (not rejected with 422).
+     *
+     * SRS §02.05.00 gap G1: per_page values above 50 must silently clamp.
+     */
+    public function test_per_page_above_50_is_clamped_to_50(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(5)->for($user)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?per_page=100');
+
+        $response->assertStatus(200);
+        // Must not 422 — clamped silently
+        $this->assertLessThanOrEqual(50, $response->json('meta.per_page'));
+    }
+
+    /**
+     * G1: ?per_page=0 (below minimum) is clamped to 1, not rejected.
+     *
+     * SRS §02.05.00 gap G1: per_page values below 1 must silently clamp to 1.
+     */
+    public function test_per_page_below_minimum_is_clamped_to_1(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(3)->for($user)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?per_page=0');
+
+        $response->assertStatus(200);
+        $this->assertGreaterThanOrEqual(1, $response->json('meta.per_page'));
+    }
+
+    /**
+     * G1: per_page + page work together — page 1 has N items, page 2 has remainder.
+     *
+     * SRS §02.05.00 gap G1: custom per_page must paginate correctly across pages.
+     */
+    public function test_per_page_paginates_correctly_across_pages(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(8)->for($user)->create();
+
+        $page1 = $this->actingAs($user)->getJson('/api/issues?per_page=5&page=1');
+        $page2 = $this->actingAs($user)->getJson('/api/issues?per_page=5&page=2');
+
+        $page1->assertStatus(200);
+        $page2->assertStatus(200);
+
+        $this->assertCount(5, $page1->json('data'));
+        $this->assertCount(3, $page2->json('data'));
+
+        // No overlaps across pages
+        $page1Ids = collect($page1->json('data'))->pluck('id');
+        $page2Ids = collect($page2->json('data'))->pluck('id');
+        $this->assertEmpty($page1Ids->intersect($page2Ids));
+    }
+
+    // =========================================================================
+    // G2 — ?sort=field allowlist (02.05.00 residual gap)
+    // =========================================================================
+
+    /**
+     * G2: ?sort=created_at returns issues ordered by created_at desc (default direction).
+     *
+     * SRS §02.05.00 gap G2: sort param must apply single-column ordering.
+     */
+    public function test_sort_by_created_at_returns_results_in_creation_order(): void
+    {
+        $user = User::factory()->create();
+
+        $older = Issue::factory()->for($user)->create(['created_at' => now()->subHours(2)]);
+        $newer = Issue::factory()->for($user)->create(['created_at' => now()->subMinutes(10)]);
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=created_at&direction=desc');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        // newer (more recent created_at) must appear before older when direction=desc
+        $newerPos = $ids->search($newer->id);
+        $olderPos = $ids->search($older->id);
+        $this->assertLessThan($olderPos, $newerPos, 'Newer issue should appear before older when sorted by created_at desc');
+    }
+
+    /**
+     * G2: ?sort=updated_at returns issues ordered by updated_at.
+     *
+     * SRS §02.05.00 gap G2: updated_at must be a valid sort field.
+     */
+    public function test_sort_by_updated_at_orders_by_last_modification(): void
+    {
+        $user = User::factory()->create();
+
+        $recentlyUpdated = Issue::factory()->for($user)->create();
+        $staleIssue = Issue::factory()->for($user)->create();
+
+        // Touch recentlyUpdated so its updated_at is clearly later
+        $staleIssue->update(['updated_at' => now()->subHour()]);
+        $recentlyUpdated->update(['updated_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=updated_at&direction=desc');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $recentPos = $ids->search($recentlyUpdated->id);
+        $stalePos = $ids->search($staleIssue->id);
+        $this->assertLessThan($stalePos, $recentPos, 'More recently updated issue should appear first when sorted by updated_at desc');
+    }
+
+    /**
+     * G2: ?sort=priority orders by priority level (critical > high > medium > low).
+     *
+     * SRS §02.05.00 gap G2: priority sort must use the numeric CASE expression.
+     */
+    public function test_sort_by_priority_orders_by_priority_level(): void
+    {
+        $user = User::factory()->create();
+
+        $lowIssue = Issue::factory()->for($user)->priority(Priority::Low)->create();
+        $criticalIssue = Issue::factory()->for($user)->critical()->create();
+        $mediumIssue = Issue::factory()->for($user)->priority(Priority::Medium)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=priority&direction=desc');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $critPos = $ids->search($criticalIssue->id);
+        $medPos = $ids->search($mediumIssue->id);
+        $lowPos = $ids->search($lowIssue->id);
+        $this->assertLessThan($medPos, $critPos, 'Critical should appear before medium when sorted by priority desc');
+        $this->assertLessThan($lowPos, $medPos, 'Medium should appear before low when sorted by priority desc');
+    }
+
+    /**
+     * G2: invalid ?sort=title falls back to default sort (no 422).
+     *
+     * SRS §02.05.00 gap G2: unrecognised sort fields must be silently ignored.
+     */
+    public function test_invalid_sort_field_is_silently_ignored(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(3)->for($user)->create();
+
+        $this->actingAs($user)->getJson('/api/issues?sort=title')
+            ->assertStatus(200);
+    }
+
+    // =========================================================================
+    // G3 — ?direction=asc|desc (02.05.00 residual gap)
+    // =========================================================================
+
+    /**
+     * G3: ?direction=asc returns oldest-created issues first.
+     *
+     * SRS §02.05.00 gap G3: direction=asc must reverse default ordering.
+     */
+    public function test_direction_asc_returns_oldest_issues_first(): void
+    {
+        $user = User::factory()->create();
+
+        $oldest = Issue::factory()->for($user)->create(['created_at' => now()->subDays(3)]);
+        $newest = Issue::factory()->for($user)->create(['created_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=created_at&direction=asc');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $oldestPos = $ids->search($oldest->id);
+        $newestPos = $ids->search($newest->id);
+        $this->assertLessThan($newestPos, $oldestPos, 'Oldest issue must appear first when direction=asc');
+    }
+
+    /**
+     * G3: ?direction=desc returns newest-created issues first (same as default).
+     *
+     * SRS §02.05.00 gap G3: explicit direction=desc must work identically to the default.
+     */
+    public function test_direction_desc_returns_newest_issues_first(): void
+    {
+        $user = User::factory()->create();
+
+        $oldest = Issue::factory()->for($user)->create(['created_at' => now()->subDays(3)]);
+        $newest = Issue::factory()->for($user)->create(['created_at' => now()]);
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=created_at&direction=desc');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $newestPos = $ids->search($newest->id);
+        $oldestPos = $ids->search($oldest->id);
+        $this->assertLessThan($oldestPos, $newestPos, 'Newest issue must appear first when direction=desc');
+    }
+
+    /**
+     * G3: invalid ?direction is silently ignored — falls back to desc (no 422).
+     *
+     * SRS §02.05.00 gap G3: unrecognised direction values must be silently discarded.
+     */
+    public function test_invalid_direction_is_silently_ignored(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(3)->for($user)->create();
+
+        $this->actingAs($user)->getJson('/api/issues?sort=created_at&direction=sideways')
+            ->assertStatus(200);
+    }
+
+    // =========================================================================
+    // G4 — pagination links preserve query params via appends() (02.05.00 residual gap)
+    // =========================================================================
+
+    /**
+     * G4: pagination next_page_url preserves active filter query params.
+     *
+     * SRS §02.05.00 gap G4: appends() must be called so clients can follow next links
+     * without losing the current filter context.
+     */
+    public function test_pagination_next_url_preserves_filter_query_params(): void
+    {
+        $user = User::factory()->create();
+
+        // Create enough open issues to span two pages at default 15 per page
+        Issue::factory()->count(20)->for($user)->open()->create();
+        // Also create some resolved issues that should NOT appear
+        Issue::factory()->count(5)->for($user)->resolved()->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?status=open');
+
+        $response->assertStatus(200);
+
+        $nextUrl = $response->json('meta.links') !== null
+            ? collect($response->json('meta.links'))->firstWhere('label', 'Next &raquo;')['url'] ?? null
+            : $response->json('links.next');
+
+        $this->assertNotNull($nextUrl, 'A next page URL must exist when there are more than 15 open issues');
+        $this->assertStringContainsString('status=open', $nextUrl, 'next_page_url must preserve the ?status filter param');
+    }
+
+    /**
+     * G4: pagination next_page_url preserves sort and direction params.
+     *
+     * SRS §02.05.00 gap G4: all query params (sort, direction, per_page, filters) must be
+     * preserved in paginator links so clients can follow them safely.
+     */
+    public function test_pagination_next_url_preserves_sort_and_direction_params(): void
+    {
+        $user = User::factory()->create();
+        Issue::factory()->count(20)->for($user)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues?sort=created_at&direction=asc&per_page=10');
+
+        $response->assertStatus(200);
+
+        $nextUrl = $response->json('meta.links') !== null
+            ? collect($response->json('meta.links'))->firstWhere('label', 'Next &raquo;')['url'] ?? null
+            : $response->json('links.next');
+
+        $this->assertNotNull($nextUrl, 'A next page URL must exist for 20 issues with per_page=10');
+        $this->assertStringContainsString('sort=created_at', $nextUrl, 'next_page_url must preserve the ?sort param');
+        $this->assertStringContainsString('direction=asc', $nextUrl, 'next_page_url must preserve the ?direction param');
+    }
+
+    // =========================================================================
+    // G6 — Default sort order coverage (02.05.00 residual gap)
+    // =========================================================================
+
+    /**
+     * G6: default sort — needs_attention=true issues appear before needs_attention=false.
+     *
+     * SRS §02.05.00 gap G6: the primary default sort key (needs_attention desc) must
+     * surface urgent issues at the top of an unsorted list.
+     */
+    public function test_default_sort_surfaces_needs_attention_issues_first(): void
+    {
+        $user = User::factory()->create();
+
+        // Low priority → needs_attention will be false (saving event)
+        $normalIssue = Issue::factory()->for($user)->priority(Priority::Low)->create();
+
+        // Critical priority → saving event sets needs_attention=true
+        $urgentIssue = Issue::factory()->for($user)->critical()->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $urgentPos = $ids->search($urgentIssue->id);
+        $normalPos = $ids->search($normalIssue->id);
+        $this->assertLessThan($normalPos, $urgentPos, 'needs_attention=true issue must appear before needs_attention=false in default sort');
+    }
+
+    /**
+     * G6: default sort — within same needs_attention bucket, higher priority appears first.
+     *
+     * SRS §02.05.00 gap G6: secondary sort is priority desc (critical → high → medium → low).
+     */
+    public function test_default_sort_orders_by_priority_within_same_attention_bucket(): void
+    {
+        $user = User::factory()->create();
+
+        // Both have needs_attention=false; check secondary sort by priority
+        $lowIssue = Issue::factory()->for($user)->priority(Priority::Low)->create();
+        $mediumIssue = Issue::factory()->for($user)->priority(Priority::Medium)->create();
+
+        $response = $this->actingAs($user)->getJson('/api/issues');
+
+        $response->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('id')->values();
+        $medPos = $ids->search($mediumIssue->id);
+        $lowPos = $ids->search($lowIssue->id);
+        $this->assertLessThan($lowPos, $medPos, 'Medium priority issue must appear before low priority in the same needs_attention bucket');
+    }
 }
