@@ -150,6 +150,22 @@ If not found → skip, pull next satisfiable task.
 
 ---
 
+## MCP Servers (Project-Relevant)
+
+Available globally (already configured):
+- **Playwright** — screenshot-driven frontend verification, visual regression
+- **Serena** — LSP-based code intelligence (symbol navigation, references)
+
+To configure during Sprint 01 scaffolding:
+- **Postgres MCP** — `npx @henkey/postgres-mcp-server --connection-string "postgresql://sts:sts@localhost:5432/sts"` — schema inspection, migration verification, query testing
+  - Configure in project-level `opencode.json` after Docker Compose is running
+  - Port will be exposed from Docker: `5432:5432` on localhost
+
+Not needed (bash covers it):
+- Docker MCP — `docker compose up/down/logs` via bash is sufficient
+
+---
+
 ## Tool Usage (Always Prefer Generators Over Manual Code)
 
 All agents must use framework/ecosystem tools to generate boilerplate. Never hand-write what a generator produces.
