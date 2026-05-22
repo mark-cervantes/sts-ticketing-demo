@@ -37,28 +37,40 @@ Every new session:
 2. `ls vault/sprint/ongoing/` — resume something in progress?
 3. `ls vault/sprint/backlog/` — what's next (filename sort order)?
 4. `git status && git branch` — uncommitted work? which branch?
-5. `docker compose ps` — is Sail running? If not: `./vendor/bin/sail up -d`
+5. `make status` — is the dev environment healthy? If anything is DOWN: `make dev`
 
-## Dev Environment — Laravel Sail
+## Dev Environment — `make` + Laravel Sail
 
-**All Laravel/PHP/Node commands run via Sail**, NOT directly on the host. The host PHP is 8.1; Sail provides PHP 8.4 + Postgres 18 + Redis 7 in containers.
+**Every dev command goes through `make` (which wraps Sail).** The Makefile in the repo root is the single source of truth — `make` alone lists all targets. Run `cat Makefile` once at session start to know what's available.
 
-| Don't run (host) | Run instead (Sail) |
+**Always-running dev rule:** the dev environment (containers + Vite + queue worker) MUST stay up for the entire session so agents can verify changes against a live app. Before and after any change that could break runtime, run `make status` — fix anything that went DOWN before continuing.
+
+**Daily workflow targets:**
+
+| Command | Purpose |
 |---|---|
-| `php artisan ...` | `./vendor/bin/sail artisan ...` |
-| `composer require ...` | `./vendor/bin/sail composer require ...` |
-| `npm install` / `npm run dev` | `./vendor/bin/sail npm install` |
-| `vendor/bin/pint` | `./vendor/bin/sail pint` |
-| `phpunit` / `php artisan test` | `./vendor/bin/sail test` |
+| `make dev` | Start everything (containers + vite + queue), idempotent — safe to re-run |
+| `make status` | Health check all services + HTTP — run before and after changes |
+| `make logs` | Tail vite + queue logs |
+| `make test` | Full PHPUnit suite |
+| `make test-filter FILTER=ClassName` | Single test class |
+| `make pint` | Auto-format PHP via Pint |
+| `make migrate` / `make fresh` / `make seed` | DB ops |
+| `make tinker` / `make shell` | REPL / container bash |
+| `make stop` | Stop vite + queue (containers stay up) |
+| `make down` | Stop everything |
 
-Bash alias suggestion (optional, not committed): `alias sail='./vendor/bin/sail'`.
+**Never run bare host commands.** Host PHP is 8.1; the app needs 8.4. If you must reach for Sail directly (a target doesn't exist), use `./vendor/bin/sail <command>` — never bare `php`, `composer`, `npm`, `npx`, `vue-tsc`, or `phpunit`.
+
+**Composer's `dev` script does NOT work for us** — it tries `php artisan serve` on the host and collides with Sail's nginx on port 80. Ignore it. `make dev` is the replacement.
 
 **Services exposed on host:**
 - App: `http://localhost`
-- Postgres: `localhost:5433` (user `sail`, pass `password`, db `laravel`) — non-default port to avoid conflicts; override via `FORWARD_DB_PORT` in `.env`
+- Vite (HMR, background): `localhost:5175`
+- Postgres: `localhost:5434` (user `sail`, pass `password`, db `laravel`) — override via `FORWARD_DB_PORT` in `.env`
 - Redis: `localhost:6379`
 
-**Boost MCP requires Sail to be running** — the MCP server invokes `php artisan boost:mcp` which depends on the app being bootable.
+**Boost MCP requires Sail to be running** — the MCP server invokes `php artisan boost:mcp` which depends on the app being bootable. `make up` ensures this.
 
 ## Git
 
