@@ -25,7 +25,7 @@ real-time SSE updates.
 
 | Layer        | Choice                           | Rationale                                                            |
 | ------------ | -------------------------------- | -------------------------------------------------------------------- |
-| Backend      | Laravel 11                       | Assessment prefers PHP/Laravel; built-in queue, events, validation   |
+| Backend      | Laravel 13                       | Assessment prefers PHP/Laravel; built-in queue, events, validation; current LTS-track release |
 | Frontend     | Inertia.js + Vue 3 + TypeScript  | SPA feel without API boilerplate; Vue is productive for this scope   |
 | UI Kit       | shadcn-vue + Tailwind CSS        | Single-source design system; change primary color in one place       |
 | Database     | PostgreSQL (Docker)              | Production-grade; robust JSON, full-text, concurrent-safe            |

@@ -13,6 +13,7 @@ tools:
   serena_*: true
   postgres_*: true
   context7_*: true
+  laravel-boost_*: true
 permissions:
   read:
     - /home/cmark/projects/ticketing-system/**

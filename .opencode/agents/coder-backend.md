@@ -12,6 +12,7 @@ tools:
   serena_*: true
   postgres_*: true
   context7_*: true
+  laravel-boost_*: true
 permissions:
   read: allow
   write: ask

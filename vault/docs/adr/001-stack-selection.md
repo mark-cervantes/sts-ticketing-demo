@@ -6,7 +6,7 @@
 
 ## Decision
 
-- **Backend:** Laravel 11
+- **Backend:** Laravel 13 (PHP 8.4, current as of Feb 2026; Boost-optimized)
 - **Frontend:** Inertia.js + Vue 3 + TypeScript
 - **UI Kit:** shadcn-vue + Tailwind CSS
 - **Database:** PostgreSQL (Docker)
