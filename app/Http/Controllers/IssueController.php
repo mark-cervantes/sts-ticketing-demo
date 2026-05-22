@@ -2,12 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\Priority;
-use App\Enums\Status;
 use App\Http\Requests\StoreIssueRequest;
 use App\Http\Requests\UpdateIssueRequest;
 use App\Http\Resources\IssueResource;
-use App\Models\Category;
 use App\Models\Issue;
 use App\Services\IssueService;
 use Illuminate\Http\JsonResponse;
@@ -26,12 +23,15 @@ class IssueController extends Controller
 {
     public function __construct(private readonly IssueService $service) {}
 
+    /** Allowed sort fields for ?sort= query param (G2). */
+    private const SORTABLE = ['created_at', 'updated_at', 'priority', 'deadline_at'];
+
     /**
      * GET /api/issues — list issues accessible by the authenticated user.
      *
      * Filters: ?status=open, ?priority=high, ?category=slug (all optional, silently ignored if invalid)
-     * Sort: needs_attention desc, priority desc, created_at desc
-     * Pagination: 15 per page
+     * Sort: ?sort=created_at (default: needs_attention→priority→created_at), ?direction=asc|desc (default: desc)
+     * Pagination: ?per_page=N (default 15, max 50), ?page=N
      */
     public function index(Request $request): ResourceCollection
     {
@@ -44,37 +44,45 @@ class IssueController extends Controller
             ->withCount('comments')
             ->accessibleBy($request->user());
 
-        // Filter: status (silently ignore invalid enum values)
-        if ($request->filled('status')) {
-            $status = Status::tryFrom($request->query('status'));
-            if ($status !== null) {
-                $query->where('status', $status);
-            }
+        // Filters — via named model scopes (G5); each scope silently ignores invalid values
+        $query->filterByStatus($request->query('status'))
+            ->filterByPriority($request->query('priority'))
+            ->filterByCategory($request->query('category'));
+
+        // Sort (G2 + G3)
+        $sort = $request->query('sort');
+        $direction = $request->query('direction', 'desc');
+
+        // Validate direction — silently fall back to desc if not asc|desc (G3)
+        if (! in_array($direction, ['asc', 'desc'], strict: true)) {
+            $direction = 'desc';
         }
 
-        // Filter: priority (silently ignore invalid enum values)
-        if ($request->filled('priority')) {
-            $priority = Priority::tryFrom($request->query('priority'));
-            if ($priority !== null) {
-                $query->where('priority', $priority);
+        if ($sort !== null && in_array($sort, self::SORTABLE, strict: true)) {
+            // User-requested single-column sort (G2)
+            if ($sort === 'priority') {
+                // priority_order alias carries numeric CASE result
+                $query->orderBy('priority_order', $direction);
+            } elseif ($sort === 'deadline_at') {
+                // Null deadlines always sort last regardless of direction (G2 + spec)
+                $query->orderByRaw("deadline_at IS NULL, deadline_at {$direction}");
+            } else {
+                $query->orderBy($sort, $direction);
             }
+        } else {
+            // Default sort: needs_attention desc, priority desc, created_at desc
+            $query->orderByDesc('needs_attention')
+                ->orderByDesc('priority_order')
+                ->orderByDesc('created_at');
         }
 
-        // Filter: category slug → resolve to category_id (silently ignore unknown slugs)
-        if ($request->filled('category')) {
-            $categoryId = Category::where('slug', $request->query('category'))->value('id');
-            if ($categoryId !== null) {
-                $query->where('category_id', $categoryId);
-            }
-        }
+        // per_page — clamp to [1, 50], default 15 (G1)
+        $perPage = min(50, max(1, (int) $request->query('per_page', 15)));
 
-        // Default sort: needs_attention desc, priority desc, created_at desc
-        // Use the aliased column so DISTINCT is happy in PostgreSQL
-        $query->orderByDesc('needs_attention')
-            ->orderByDesc('priority_order')
-            ->orderByDesc('created_at');
+        $issues = $query->paginate($perPage);
 
-        $issues = $query->paginate(15);
+        // Preserve all query params in pagination links (G4)
+        $issues->appends($request->query());
 
         return IssueResource::collection($issues);
     }
