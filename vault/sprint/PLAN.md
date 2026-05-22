@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 01 in progress (Laravel scaffold + MCP setup DONE; frontend layer next)
+> **Status:** Sprint 01 COMPLETE ✅ (all 5 tasks + 4 hygiene follow-ups filed; deployable checkpoint on main)
 
 ## Dev Environment Reminder
 
@@ -66,10 +66,14 @@ When all `XX.*` tasks are in `done/`:
 | Task ID  | Title                                       | Status     | Depends On  | Branch                  |
 |----------|---------------------------------------------|------------|-------------|-------------------------|
 | 01.01.00 | MCP server setup (Boost + Postgres + wiring)| ✅ done    | —           | main (pre-sprint)       |
-| 01.02.00 | Inertia + Vue + Breeze + shadcn-vue + Horizon | backlog | 01.01       | feature/frontend-scaffold |
-| 01.03.00 | Models + Migrations + Enums                 | backlog    | 01.02       | feature/models          |
-| 01.04.00 | Factories + Seeders                         | backlog    | 01.03       | feature/seeders         |
-| 01.05.00 | Auth customization + Policies               | backlog    | 01.03       | feature/auth            |
+| 01.02.00 | Inertia + Vue + Breeze + shadcn-vue + Horizon | ✅ done | 01.01       | feature/frontend-scaffold |
+| 01.02.50 | Gitignore .obsidian editor state            | ✅ done    | —           | chore/gitignore-obsidian |
+| 01.02.60 | Clean components.json tailwind.config       | ✅ done    | 01.02       | chore/components-json-cleanup |
+| 01.03.00 | Models + Migrations + Enums                 | ✅ done    | 01.02       | feature/models          |
+| 01.03.50 | Restore categories.name unique + test fix   | backlog    | 01.03       | chore/category-name-unique |
+| 01.04.00 | Factories + Seeders                         | ✅ done    | 01.03       | feature/seeders         |
+| 01.05.00 | Auth customization + Policies               | ✅ done    | 01.03       | feature/auth            |
+| 01.05.50 | Policy coverage cleanup                     | backlog    | 01.05, 02.01 | chore/policy-coverage-cleanup |
 
 ### Sprint 02: Core API + AI Pipeline
 > One deployable outcome: full issue CRUD via API, comments, categories, AI summaries generated.

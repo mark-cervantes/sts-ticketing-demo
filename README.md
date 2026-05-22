@@ -1,58 +1,225 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Issue Intake & Smart Summary System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+An issue intake + AI summary system for support/operations teams. Laravel 13 +
+Inertia + Vue 3 + PostgreSQL + Redis + Horizon, fully containerized via
+**Laravel Sail**.
 
-## About Laravel
+> **Live demo:** sts-demo.betamaxgroup.tech
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## TL;DR — Daily Workflow
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+make dev       # start everything (containers + vite + queue), idempotent
+make status    # verify all services are healthy
+make logs      # tail vite + queue logs
+make test      # run the full PHPUnit suite
+make down      # stop everything when you're done for the day
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+That's it. Every other command is also a `make` target — run `make` alone
+to see all of them.
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Why Make + Sail (and not bare commands)
 
-## Code of Conduct
+| Concern | Solution |
+|---|---|
+| Host PHP is 8.1; the app needs PHP 8.4 | Everything runs inside the Sail container — host PHP is never invoked |
+| Composer's built-in `dev` script collides with Sail's nginx on port 80 | Replaced by `make dev`, which starts only what Sail doesn't already provide |
+| Vite must run *alongside* Sail (not replace it) on port 5175 | `make vite` starts it in the background inside the container with logging |
+| Queue worker must be running for `GenerateSummaryJob` to fire | `make queue` runs `queue:work` in the background |
+| Agents need to verify dev state cheaply | `make status` is a single command, parseable output |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+**Rule:** never run bare `php`, `composer`, `npm`, `npx`, or `vue-tsc` on the
+host. Always use `make <target>` or `./vendor/bin/sail <command>`.
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Architecture (high level)
 
-## License
+```
+┌─────────────┐     HTTPS      ┌──────────────────┐
+│   Browser   │ ◄────────────► │   Sail (nginx)   │
+│  (Vue SPA)  │                │   :80            │
+└─────────────┘                └────────┬─────────┘
+                                        │
+                               ┌────────▼─────────┐
+                               │   Laravel App    │  ◄── make up
+                               │   (PHP 8.4)      │
+                               │   Inertia SSR    │
+                               ├──────────────────┤
+                               │   Vite :5175     │  ◄── make vite
+                               │   (HMR)          │
+                               ├──────────────────┤
+                               │   Queue Worker   │  ◄── make queue
+                               │   (jobs)         │
+                               └──┬───────────┬───┘
+                                  │           │
+                          ┌───────▼──┐   ┌────▼─────┐
+                          │ Postgres │   │  Redis   │
+                          │  :5434   │   │  :6379   │
+                          └──────────┘   └──────────┘
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Laravel 13 (PHP 8.4) |
+| Frontend | Inertia.js + Vue 3 + TypeScript |
+| UI Kit | shadcn-vue + Tailwind CSS v4 |
+| Database | PostgreSQL 18 |
+| Queue | Redis + Horizon |
+| AI | Ollama Cloud (primary), OpenRouter (backup), rules-based fallback |
+| Real-time | SSE (Server-Sent Events) |
+| Auth | Laravel Breeze, session-based |
+| Testing | **PHPUnit 12** (not Pest, despite SPEC §2) |
+| Drag & Drop | vue-draggable-plus |
+
+### Ports (on the host)
+
+| Service | Host port | Notes |
+|---|---|---|
+| Laravel app | **80** | http://localhost |
+| Vite (HMR) | **5175** | Background; you don't visit this directly |
+| PostgreSQL | **5434** | mapped from container's 5432; override via `FORWARD_DB_PORT` |
+| Redis | **6379** | |
+
+---
+
+## First-Time Setup
+
+```bash
+git clone <repo>
+cd ticketing-system
+make setup    # composer install, npm install, .env, key:generate, migrate
+make dev      # start everything
+```
+
+If Boost MCP errors during agent sessions, that means Sail isn't up. Run
+`make up` first.
+
+---
+
+## Project Layout
+
+```
+.
+├── app/                       # PHP source (coder-backend's domain)
+│   ├── Enums/                 # Priority, Status, Visibility, Permission, SummaryStatus
+│   ├── Http/                  # Controllers, Form Requests, Middleware
+│   ├── Models/                # Eloquent models
+│   ├── Policies/              # Authorization (ladderized SPEC §3.2)
+│   ├── Services/              # Business logic, including Ai/ drivers
+│   └── Jobs/                  # Async work (GenerateSummaryJob)
+├── resources/
+│   ├── js/                    # Vue + Inertia (coder-frontend's domain)
+│   │   ├── Pages/             # Inertia pages
+│   │   ├── Components/        # Vue components (ui/ added on demand via shadcn-vue CLI)
+│   │   ├── Layouts/           # AuthenticatedLayout etc.
+│   │   ├── Types/             # Shared TypeScript interfaces (created on demand)
+│   │   └── composables/       # Vue composables (SSE, etc.)
+│   └── css/app.css            # Tailwind v4 + theme tokens
+├── database/
+│   ├── migrations/            # Schema (coder-backend)
+│   ├── factories/             # Test fixtures (QA agent owns these)
+│   └── seeders/               # Demo data (coder-backend)
+├── tests/                     # PHPUnit 12 (QA agent's domain)
+│   ├── Feature/               # Integration + HTTP tests
+│   └── Unit/                  # Pure logic
+├── vault/                     # Living docs (single source of truth)
+│   ├── SPEC.md                # What to build
+│   ├── docs/SRS.md            # How to build it (scenarios I-XX)
+│   ├── docs/adr/              # Decision records (why)
+│   └── sprint/                # Task management — PLAN.md, backlog/, ongoing/, done/
+├── .opencode/agents/          # Project-specific AI agents
+├── Makefile                   # All dev workflow commands (this file's bff)
+└── AGENTS.md                  # Conventions agents must follow
+```
+
+---
+
+## AI-Driven Development
+
+This project uses [OpenCode](https://opencode.ai) with four project-specific agents:
+
+| Agent | Role |
+|---|---|
+| `tech-lead` | Task enrichment + code review (no code) |
+| `qa` | Red-phase test writing + verification (no app code) |
+| `coder-backend` | Laravel implementation (no frontend) |
+| `coder-frontend` | Vue + Inertia implementation (no PHP) |
+
+Each agent is designed using the 5-phase Agent Design Protocol (see
+`.opencode/agents/*.md` and `vault/SPEC.md`). The workflow per task:
+
+```
+tech-lead (enrich)
+    ↓
+qa (RED tests)
+    ↓
+coder-backend → coder-frontend
+    ↓
+qa (VERIFY — full suite green)
+    ↓
+tech-lead (REVIEW — APPROVED or CHANGES_REQUIRED)
+    ↓
+merge to dev
+```
+
+Boost MCP and `@henkey/postgres-mcp-server` are configured in `opencode.json`
+and require `make up` to be running.
+
+---
+
+## Common Tasks
+
+```bash
+# Iteration
+make dev                                # start dev environment
+make status                             # is it still working?
+make logs                               # what's vite/queue saying?
+
+# Tests
+make test                               # full suite
+make test-filter FILTER=CreateIssueTest # one class
+
+# Code quality
+make pint                               # auto-fix formatting
+make pint-check                         # CI-style check, no fix
+
+# Database
+make fresh                              # drop, re-migrate, seed (destructive)
+make migrate                            # apply pending migrations only
+make seed                               # add seed data to current DB
+
+# Ad-hoc
+make tinker                             # PHP REPL
+make shell                              # bash inside the container
+```
+
+---
+
+## When Things Break
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `make dev` says container is up but http://localhost gives connection refused | Stale containers from a previous broken state | `make down && make dev` |
+| Vite changes don't appear in browser | Vite died silently | `make status` then `make vite` to restart |
+| Test suite hangs | Queue worker holding a Postgres connection | `make queue-stop && make test` |
+| Boost MCP errors in agent session | Sail isn't running | `make up` |
+| `composer run dev` doesn't work | It's a non-Sail script; ignore it | Use `make dev` |
+| `php artisan ...` fails on host | Host PHP is 8.1, app needs 8.4 | Use `make` targets or `./vendor/bin/sail artisan ...` |
+
+---
+
+## Documentation
+
+- **`vault/SPEC.md`** — product specification
+- **`vault/docs/SRS.md`** — software requirements with scenarios
+- **`vault/docs/adr/`** — architecture decision records
+- **`vault/sprint/PLAN.md`** — current sprint state
+- **`AGENTS.md`** — conventions for AI agents (and humans)

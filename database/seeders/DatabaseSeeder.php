@@ -2,24 +2,35 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * DatabaseSeeder orchestrates all seeders in dependency order.
+ *
+ * IMPORTANT: WithoutModelEvents MUST NOT be used here.
+ * Both Issue::saving (needs_attention computation) and Category::creating
+ * (slug auto-generation) depend on model events firing during seeding.
+ *
+ * Order: Category → User → Issue → Comment → IssueShare
+ */
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * Seed the application's database.
+     *
+     * Wrapped in a transaction so partial re-seeds are atomic.
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        DB::transaction(function (): void {
+            $this->call([
+                CategorySeeder::class,
+                UserSeeder::class,
+                IssueSeeder::class,
+                CommentSeeder::class,
+                IssueShareSeeder::class,
+            ]);
+        });
     }
 }
