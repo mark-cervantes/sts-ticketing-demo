@@ -1,0 +1,74 @@
+<?php
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * Issue API resource — shapes the JSON response for the Issue CRUD API.
+ *
+ * List response: includes comments_count (not full comments array).
+ * Show response: includes comments with comments.user.
+ *
+ * @see task 02.01.00 / SRS §FR-03 §FR-04
+ */
+class IssueResource extends JsonResource
+{
+    /**
+     * Transform the resource into an array.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'description' => $this->description,
+            'priority' => $this->priority->value,
+            'status' => $this->status->value,
+            'visibility' => $this->visibility->value,
+            'summary_status' => $this->summary_status->value,
+            'summary' => $this->summary,
+            'suggested_next_action' => $this->suggested_next_action,
+            'needs_attention' => $this->needs_attention,
+            'deadline_at' => $this->deadline_at?->toIso8601String(),
+            'user_id' => $this->user_id,
+            'category_id' => $this->category_id,
+            'created_at' => $this->created_at->toIso8601String(),
+            'updated_at' => $this->updated_at->toIso8601String(),
+
+            // Owner (always eager-loaded)
+            'user' => [
+                'id' => $this->user->id,
+                'name' => $this->user->name,
+            ],
+
+            // Category (always eager-loaded)
+            'category' => [
+                'id' => $this->category->id,
+                'name' => $this->category->name,
+                'slug' => $this->category->slug,
+            ],
+
+            // comments_count present on list (withCount); absent on show
+            $this->mergeWhen($this->comments_count !== null, fn () => [
+                'comments_count' => $this->comments_count,
+            ]),
+
+            // comments present on show (whenLoaded); absent on list
+            'comments' => $this->whenLoaded('comments', function () {
+                return $this->comments->map(fn ($comment) => [
+                    'id' => $comment->id,
+                    'body' => $comment->body,
+                    'created_at' => $comment->created_at->toIso8601String(),
+                    'user' => [
+                        'id' => $comment->user->id,
+                        'name' => $comment->user->name,
+                    ],
+                ]);
+            }),
+        ];
+    }
+}
