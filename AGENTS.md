@@ -150,6 +150,47 @@ If not found → skip, pull next satisfiable task.
 
 ---
 
+## Tool Usage (Always Prefer Generators Over Manual Code)
+
+All agents must use framework/ecosystem tools to generate boilerplate. Never hand-write what a generator produces.
+
+### Laravel (Backend)
+```bash
+php artisan make:model Issue -mf          # Model + migration + factory
+php artisan make:controller IssueController --resource  # Resource controller
+php artisan make:request StoreIssueRequest   # Form request
+php artisan make:policy IssuePolicy --model=Issue  # Policy
+php artisan make:job GenerateSummaryJob       # Job
+php artisan make:event SummaryCompleted       # Event
+php artisan make:observer IssueObserver --model=Issue  # Observer
+php artisan make:provider SummaryServiceProvider  # Service provider
+php artisan make:test IssueLifecycleTest      # Test
+php artisan make:enum Priority                # Enum (if available)
+php artisan make:seeder IssueSeeder           # Seeder
+php artisan make:factory IssueFactory         # Factory
+```
+
+### Composer
+```bash
+composer require laravel/horizon             # Don't manually configure queue
+composer require laravel/breeze --dev        # Don't manually scaffold auth
+```
+
+### Frontend (npm / npx)
+```bash
+npx shadcn-vue@latest add button dialog sheet input select badge skeleton sonner
+npm install vue-draggable-plus               # Don't hand-write drag-drop
+```
+
+### General Rule
+If a CLI command generates it → use the command. Then customize the generated file. This ensures:
+- Correct file location every time
+- Correct namespace/class boilerplate
+- No typos in extends/implements
+- Consistent with framework version conventions
+
+---
+
 ## Architecture Rules
 
 ### Patterns (Always Use)
