@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @see SPEC §4.2 / ADR-005 / BR-01 / BR-03 / FR-02
  */
 #[Fillable([
+    'user_id',
     'title',
     'description',
     'priority',
