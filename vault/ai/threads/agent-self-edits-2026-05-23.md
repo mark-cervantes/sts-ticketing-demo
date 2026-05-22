@@ -1,9 +1,18 @@
 ---
-status: PARKED
+status: RESOLVED
 opened: 2026-05-23
 last_touched: 2026-05-23
+resolved: 2026-05-23
 owner: user
 ---
+
+## Resolution
+
+User clarified the agent rewrites were **intentional, hand-authored edits**, not silent agent drift. They were committed by the user as `0404ee4 feat(agents): rewrite project agents using 5-phase Agent Design Protocol`. The stashed copies were the same content, now obsolete and dropped. No action needed; thread closed.
+
+---
+
+## Original entry (kept for context)
 
 # Concern — Project agents are self-rewriting their own files mid-task
 
