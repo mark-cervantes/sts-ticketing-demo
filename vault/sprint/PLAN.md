@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 01 in progress (MCP + frontend + models DONE; factories layer next)
+> **Status:** Sprint 01 in progress (MCP + frontend + models + seeders DONE; auth/policies last)
 
 ## Dev Environment Reminder
 
@@ -71,7 +71,7 @@ When all `XX.*` tasks are in `done/`:
 | 01.02.60 | Clean components.json tailwind.config       | ✅ done    | 01.02       | chore/components-json-cleanup |
 | 01.03.00 | Models + Migrations + Enums                 | ✅ done    | 01.02       | feature/models          |
 | 01.03.50 | Restore categories.name unique + test fix   | backlog    | 01.03       | chore/category-name-unique |
-| 01.04.00 | Factories + Seeders                         | backlog    | 01.03       | feature/seeders         |
+| 01.04.00 | Factories + Seeders                         | ✅ done    | 01.03       | feature/seeders         |
 | 01.05.00 | Auth customization + Policies               | backlog    | 01.03       | feature/auth            |
 
 ### Sprint 02: Core API + AI Pipeline

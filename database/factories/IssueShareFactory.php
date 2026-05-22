@@ -26,4 +26,34 @@ class IssueShareFactory extends Factory
             'permission' => Permission::View,
         ];
     }
+
+    // -------------------------------------------------------------------------
+    // Permission states
+    // -------------------------------------------------------------------------
+
+    /** Generic permission setter. */
+    public function permission(Permission $permission): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'permission' => $permission,
+        ]);
+    }
+
+    /** View-only permission. */
+    public function view(): static
+    {
+        return $this->permission(Permission::View);
+    }
+
+    /** Comment permission. */
+    public function comment(): static
+    {
+        return $this->permission(Permission::Comment);
+    }
+
+    /** Edit permission. */
+    public function edit(): static
+    {
+        return $this->permission(Permission::Edit);
+    }
 }
