@@ -33,10 +33,32 @@ Project agents in `.opencode/agents/` are the DEFAULT for this project. Do not u
 ## Cold-Start Protocol
 
 Every new session:
-1. `cat vault/sprint/PLAN.md`
-2. `ls vault/sprint/ongoing/` — resume?
-3. `ls vault/sprint/backlog/` — what's next?
-4. `git status && git branch`
+1. `cat vault/sprint/PLAN.md` — current sprint state
+2. `ls vault/sprint/ongoing/` — resume something in progress?
+3. `ls vault/sprint/backlog/` — what's next (filename sort order)?
+4. `git status && git branch` — uncommitted work? which branch?
+5. `docker compose ps` — is Sail running? If not: `./vendor/bin/sail up -d`
+
+## Dev Environment — Laravel Sail
+
+**All Laravel/PHP/Node commands run via Sail**, NOT directly on the host. The host PHP is 8.1; Sail provides PHP 8.4 + Postgres 18 + Redis 7 in containers.
+
+| Don't run (host) | Run instead (Sail) |
+|---|---|
+| `php artisan ...` | `./vendor/bin/sail artisan ...` |
+| `composer require ...` | `./vendor/bin/sail composer require ...` |
+| `npm install` / `npm run dev` | `./vendor/bin/sail npm install` |
+| `vendor/bin/pint` | `./vendor/bin/sail pint` |
+| `phpunit` / `php artisan test` | `./vendor/bin/sail test` |
+
+Bash alias suggestion (optional, not committed): `alias sail='./vendor/bin/sail'`.
+
+**Services exposed on host:**
+- App: `http://localhost`
+- Postgres: `localhost:5432` (user `sail`, pass `password`, db `laravel`)
+- Redis: `localhost:6379`
+
+**Boost MCP requires Sail to be running** — the MCP server invokes `php artisan boost:mcp` which depends on the app being bootable.
 
 ## Git
 
@@ -48,8 +70,8 @@ Every new session:
 
 ## Testing Contract
 
-1. `php artisan test` before any change → record baseline
-2. `php artisan test` after every logical change
+1. `./vendor/bin/sail test` before any change → record baseline
+2. `./vendor/bin/sail test` after every logical change
 3. Previously-passing test fails → YOUR change is wrong → fix code, not the test
 4. Never modify or delete existing tests
 5. Task not done until full suite passes
@@ -58,16 +80,23 @@ Every new session:
 
 Always use framework CLIs to generate boilerplate. Never hand-write what a generator produces.
 
-- Laravel: `php artisan make:{model,controller,request,policy,job,event,observer,test,seeder,factory}`
-- Composer: `composer require <package>` (don't manually configure)
-- Frontend: `npx shadcn-vue@latest add <component>`, `npm install <package>`
+- Laravel: `./vendor/bin/sail artisan make:{model,controller,request,policy,job,event,observer,test,seeder,factory}`
+- Composer: `./vendor/bin/sail composer require <package>` (don't manually configure)
+- Frontend: `./vendor/bin/sail npx shadcn-vue@latest add <component>`, `./vendor/bin/sail npm install <package>`
 
 Customize the generated file after generation. Never skip generation to write boilerplate manually.
 
 ## MCP Servers
 
-Globally available: Playwright, Serena.
-Project-specific MCPs are configured in `opencode.json` (root) when needed.
+Project-level (in `opencode.json`):
+- `laravel-boost` — schema, routes, artisan, tinker, config, error logs, 17k Laravel docs. **Requires Sail running.**
+- `postgres` — direct DB queries, schema introspection (npx @henkey/postgres-mcp-server)
+
+Globally available: `playwright`, `serena`, `context7`.
+
+When Boost MCP is available, prefer its tools over manual artisan calls:
+- `database-query` / `database-schema` > `sail artisan tinker`
+- `search-docs` > Context7 for Laravel ecosystem questions
 
 ===
 

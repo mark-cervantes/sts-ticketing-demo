@@ -1,22 +1,18 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Approved (pending task file creation)
+> **Status:** Sprint 01 in progress (Laravel scaffold + MCP setup DONE; frontend layer next)
+
+## Dev Environment Reminder
+
+All commands run through Laravel Sail: `./vendor/bin/sail <command>`. Never bare `php artisan`.
+Cold-start verifies Sail is up via `docker compose ps` (see AGENTS.md).
 
 ---
 
-## How This Works (Cold-Start Protocol)
+## Cold-Start
 
-A new agent session reads this file first. Then:
-
-```
-1. READ this file              → understand project structure + current state
-2. ls vault/sprint/ongoing/    → am I resuming something?
-3. ls vault/sprint/done/       → what's already built?
-4. ls vault/sprint/backlog/    → what's next (sort by filename)?
-5. git status + git branch     → uncommitted work? which branch?
-6. DECIDE: resume ongoing OR pull next from backlog
-```
+See `AGENTS.md` → "Cold-Start Protocol" + "Dev Environment — Laravel Sail".
 
 ---
 
@@ -67,12 +63,13 @@ When all `XX.*` tasks are in `done/`:
 ### Sprint 01: Foundation
 > One deployable outcome: app boots, migrations run, seed data visible, auth works.
 
-| Task ID  | Title                        | Depends On  | Branch                  |
-|----------|------------------------------|-------------|-------------------------|
-| 01.01.00 | Laravel scaffold + Breeze    | —           | feature/scaffold        |
-| 01.02.00 | Models + Migrations + Enums  | 01.01       | feature/models          |
-| 01.03.00 | Factories + Seeders          | 01.02       | feature/seeders         |
-| 01.04.00 | Auth customization + Policies| 01.02       | feature/auth            |
+| Task ID  | Title                                       | Status     | Depends On  | Branch                  |
+|----------|---------------------------------------------|------------|-------------|-------------------------|
+| 01.01.00 | MCP server setup (Boost + Postgres + wiring)| ✅ done    | —           | main (pre-sprint)       |
+| 01.02.00 | Inertia + Vue + Breeze + shadcn-vue + Horizon | backlog | 01.01       | feature/frontend-scaffold |
+| 01.03.00 | Models + Migrations + Enums                 | backlog    | 01.02       | feature/models          |
+| 01.04.00 | Factories + Seeders                         | backlog    | 01.03       | feature/seeders         |
+| 01.05.00 | Auth customization + Policies               | backlog    | 01.03       | feature/auth            |
 
 ### Sprint 02: Core API + AI Pipeline
 > One deployable outcome: full issue CRUD via API, comments, categories, AI summaries generated.
@@ -108,14 +105,15 @@ When all `XX.*` tasks are in `done/`:
 | 04.04.00 | Share UI (modal section)     | 04.01, 03.04| feature/share-ui          | —         |
 
 ### Sprint 05: Deployment + Documentation
-> One deployable outcome: docker compose up -d works, README complete, submitted.
+> One deployable outcome: production Docker setup works, README complete, submitted.
+> Note: Sail's `compose.yaml` is DEV-only. Production needs its own setup.
 
-| Task ID  | Title                        | Depends On  | Branch                    | Parallel? |
-|----------|------------------------------|-------------|---------------------------|-----------|
-| 05.01.00 | Docker Compose setup         | Sprint 04   | feature/docker            | —         |
-| 05.02.00 | Caddy + domain config        | 05.01       | feature/deployment        | —         |
-| 05.03.00 | README + Architecture doc    | All         | feature/readme            | —         |
-| 05.04.00 | Final seed verification      | 05.01       | feature/final-polish      | w/ 05.03  |
+| Task ID  | Title                            | Depends On  | Branch                    | Parallel? |
+|----------|----------------------------------|-------------|---------------------------|-----------|
+| 05.01.00 | Production Dockerfile + compose  | Sprint 04   | feature/prod-docker       | —         |
+| 05.02.00 | Caddy + domain config            | 05.01       | feature/deployment        | —         |
+| 05.03.00 | README + Architecture doc        | All         | feature/readme            | —         |
+| 05.04.00 | Final seed verification          | 05.01       | feature/final-polish      | w/ 05.03  |
 
 ---
 
