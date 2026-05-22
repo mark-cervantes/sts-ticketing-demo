@@ -4,6 +4,7 @@
 > **Date:** 2026-05-22
 > **Status:** Approved
 > **PRD Source:** `~/Downloads/Software Developer Practical Assessment.md`
+> **Location:** vault/SPEC.md
 
 ---
 

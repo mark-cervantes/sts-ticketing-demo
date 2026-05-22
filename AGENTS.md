@@ -10,9 +10,9 @@
 - **Name:** Issue Intake & Smart Summary System
 - **Domain:** sts-demo.betamaxgroup.tech
 - **Stack:** Laravel 11 + Inertia + Vue 3 + TypeScript + PostgreSQL + Redis
-- **Spec:** SPEC.md (root)
-- **SRS:** docs/SRS.md
-- **ADRs:** docs/adr/
+- **Spec:** vault/SPEC.md
+- **SRS:** vault/docs/SRS.md
+- **ADRs:** vault/docs/adr/
 
 ---
 
@@ -203,8 +203,8 @@ app, postgres, redis, horizon, scheduler
 
 | Document           | Location           | Purpose                          |
 |--------------------|--------------------|----------------------------------|
-| Specification      | `SPEC.md`          | What to build (approved)         |
-| Technical Detail   | `docs/SRS.md`      | How to build it (ground truth)   |
-| Architecture Decisions | `docs/adr/*.md` | Why decisions were made          |
+| Specification      | `vault/SPEC.md`          | What to build (approved)         |
+| Technical Detail   | `vault/docs/SRS.md`      | How to build it (ground truth)   |
+| Architecture Decisions | `vault/docs/adr/*.md` | Why decisions were made          |
 | Sprint Plan        | `vault/sprint/PLAN.md` | Current state + ordering     |
 | Assessment PRD     | `~/Downloads/Software Developer Practical Assessment.md` | Original requirements |
