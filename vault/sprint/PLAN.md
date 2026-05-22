@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 01 in progress (MCP + frontend + models + seeders DONE; auth/policies last)
+> **Status:** Sprint 01 COMPLETE ✅ (all 5 tasks + 4 hygiene follow-ups filed; deployable checkpoint on main)
 
 ## Dev Environment Reminder
 
@@ -72,7 +72,8 @@ When all `XX.*` tasks are in `done/`:
 | 01.03.00 | Models + Migrations + Enums                 | ✅ done    | 01.02       | feature/models          |
 | 01.03.50 | Restore categories.name unique + test fix   | backlog    | 01.03       | chore/category-name-unique |
 | 01.04.00 | Factories + Seeders                         | ✅ done    | 01.03       | feature/seeders         |
-| 01.05.00 | Auth customization + Policies               | backlog    | 01.03       | feature/auth            |
+| 01.05.00 | Auth customization + Policies               | ✅ done    | 01.03       | feature/auth            |
+| 01.05.50 | Policy coverage cleanup                     | backlog    | 01.05, 02.01 | chore/policy-coverage-cleanup |
 
 ### Sprint 02: Core API + AI Pipeline
 > One deployable outcome: full issue CRUD via API, comments, categories, AI summaries generated.
