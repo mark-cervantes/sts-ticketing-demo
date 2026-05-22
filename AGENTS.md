@@ -72,6 +72,11 @@ Every new session:
 
 **Boost MCP requires Sail to be running** — the MCP server invokes `php artisan boost:mcp` which depends on the app being bootable. `make up` ensures this.
 
+## Source-of-Truth & Same-Origin Policy
+
+- **`.env` is the single source of truth for ports/URLs.** `APP_URL`, `APP_PORT`, `VITE_PORT`, `FORWARD_DB_PORT`, `FORWARD_REDIS_PORT` drive Makefile, Vite, and Laravel together. Never hardcode `http://localhost`, `:5175`, `:5434` in app code, agent prompts, or test fixtures. See README "Adaptive Configuration" for details.
+- **Stack is same-origin** (Inertia + Breeze + Sail nginx). No `config/cors.php`, no `SANCTUM_STATEFUL_DOMAINS`, no `VITE_API_URL`, no `axios.create({ baseURL })`. If a task introduces a second origin (mobile app, separate SPA, public webhook), it's an architectural change — tech-lead reviews/approves first, never silently added.
+
 ## Git
 
 - `main` (stable) → `dev` (integration) → `feature/<task-slug>`

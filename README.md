@@ -90,6 +90,60 @@ host. Always use `make <target>` or `./vendor/bin/sail <command>`.
 
 ---
 
+## Adaptive Configuration
+
+The dev stack is built around **one source of truth: `.env`**. Change a port
+once, and the Makefile, Vite, and Laravel all adapt.
+
+### What's adaptive
+
+| Variable | Drives |
+|---|---|
+| `APP_URL` | Laravel's URL generation, Vite's HMR host, `make status` health check |
+| `APP_PORT` | Sail's nginx, `make status` HTTP probe |
+| `VITE_PORT` | Vite dev server, Sail port forward, `make status` |
+| `FORWARD_DB_PORT` | Postgres host port, `make status` |
+| `FORWARD_REDIS_PORT` | Redis host port, `make status` |
+
+### Port conflicts (running multiple projects)
+
+If another project is using port 80 / 5175 / 5434, edit `.env`:
+
+```dotenv
+APP_PORT=8080
+APP_URL=http://localhost:8080
+VITE_PORT=5176
+FORWARD_DB_PORT=5435
+```
+
+Then `make config` to verify, `make down && make dev` to apply. The preflight
+in `make dev` will refuse to start if a port is held by a non-project process,
+showing you the PID and command line holding it.
+
+### Same-origin policy
+
+This stack is **same-origin**: the Vue SPA and the Laravel API are served
+from the same domain via Sail's nginx. This means:
+
+- **No `config/cors.php`** — Laravel doesn't need it
+- **No Sanctum stateful domains** — Breeze session auth on a single origin
+- **No `VITE_API_URL`** — frontend uses `route()` from Ziggy and relative paths
+- **No `axios.create({ baseURL })`** — `useForm()` from Inertia handles mutations
+
+If a future change introduces a second origin (separate SPA host, mobile app,
+public webhook receiver), CORS + stateful domains must be added as a deliberate
+architectural change — `tech-lead` flags this in review.
+
+### What's NOT adaptive (by design)
+
+- The container service names (`laravel.test`, `pgsql`, `redis`) are
+  hardcoded in `docker-compose.yml` and the Makefile — changing them would
+  break Sail's conventions.
+- The `Tests\TestCase` base class — PHPUnit 12 is fixed (see
+  `AGENTS.md` for why Pest isn't used).
+
+---
+
 ## First-Time Setup
 
 ```bash
