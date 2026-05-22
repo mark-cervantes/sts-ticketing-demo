@@ -229,4 +229,39 @@ class IssuePolicyTest extends TestCase
         $this->assertTrue($owner->can('restore', $issue));
         $this->assertFalse($other->can('restore', $issue));
     }
+
+    // -------------------------------------------------------------------------
+    // forceDelete — owner only
+    // -------------------------------------------------------------------------
+
+    /** SRS §8.2: owner can permanently delete their own issue. */
+    public function test_owner_can_force_delete_own_issue(): void
+    {
+        $owner = User::factory()->create();
+        $issue = Issue::factory()->for($owner)->create();
+
+        $this->assertTrue($owner->can('forceDelete', $issue));
+    }
+
+    /** SRS §8.2: non-owner cannot permanently delete an issue, even with the highest share level. */
+    public function test_non_owner_cannot_force_delete_issue(): void
+    {
+        $owner = User::factory()->create();
+        $editor = User::factory()->create();
+        $issue = Issue::factory()->for($owner)->create();
+        // Grant the highest share level (edit) — must still be denied.
+        IssueShare::factory()->for($issue)->for($editor, 'user')->edit()->create();
+
+        $this->assertFalse($editor->can('forceDelete', $issue));
+    }
+
+    /** SRS §8.2: unrelated authenticated user cannot permanently delete an issue. */
+    public function test_unrelated_user_cannot_force_delete_issue(): void
+    {
+        $owner = User::factory()->create();
+        $unrelated = User::factory()->create();
+        $issue = Issue::factory()->for($owner)->create();
+
+        $this->assertFalse($unrelated->can('forceDelete', $issue));
+    }
 }
