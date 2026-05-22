@@ -55,7 +55,7 @@ Bash alias suggestion (optional, not committed): `alias sail='./vendor/bin/sail'
 
 **Services exposed on host:**
 - App: `http://localhost`
-- Postgres: `localhost:5432` (user `sail`, pass `password`, db `laravel`)
+- Postgres: `localhost:5433` (user `sail`, pass `password`, db `laravel`) — non-default port to avoid conflicts; override via `FORWARD_DB_PORT` in `.env`
 - Redis: `localhost:6379`
 
 **Boost MCP requires Sail to be running** — the MCP server invokes `php artisan boost:mcp` which depends on the app being bootable.

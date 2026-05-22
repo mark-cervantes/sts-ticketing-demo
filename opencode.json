@@ -8,7 +8,7 @@
                 "-y",
                 "@henkey/postgres-mcp-server",
                 "--connection-string",
-                "postgresql://sail:password@localhost:5432/laravel"
+                "postgresql://sail:password@localhost:5433/laravel"
             ],
             "enabled": true
         },
