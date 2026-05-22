@@ -28,3 +28,11 @@ Thumbs.db
 
 # Obsidian editor state
 .obsidian/
+
+# Browser automation artifacts
+.playwright-mcp/
+/test-results/
+/vault/sprint/visual-evidence/
+
+# Generated code graph output
+/graphify-out/

@@ -12,7 +12,7 @@ VITE_PORT := 5175
 .DEFAULT_GOAL := help
 .PHONY: help dev up down restart vite vite-stop queue queue-stop status logs \
         stop test test-filter pint pint-check fresh seed migrate tinker shell \
-        npm-install composer-install setup clean-logs
+        npm-install composer-install setup clean-logs playwright-install verify-visual
 
 # ──────────────────────────────────────────────────────────────────────────
 # Help
@@ -24,6 +24,7 @@ help: ## Show this help (default)
 	@echo "Daily workflow:"
 	@echo "  make dev         — start everything (containers + vite + queue), idempotent"
 	@echo "  make status      — health check: containers, vite, queue, http"
+	@echo "  make verify-visual — run vue-tsc + Playwright smoke gate against the live app"
 	@echo "  make logs        — tail vite + queue logs (Ctrl-C to exit)"
 	@echo "  make stop        — stop vite + queue (containers stay up)"
 	@echo "  make down        — stop everything including containers"
@@ -138,6 +139,19 @@ test: ## Run full PHPUnit suite
 
 test-filter: ## Run filtered test: make test-filter FILTER=ClassName
 	@$(SAIL) test --filter=$(FILTER)
+
+playwright-install: ## Install Playwright Chromium browser in the app container
+	@$(SAIL) npx playwright install chromium
+
+verify-visual: status playwright-install ## Run the live frontend verification gate
+	@echo ""
+	@echo "Visual Verification"
+	@echo "─────────────────────────────────────────"
+	@docker compose exec -T laravel.test sh -lc 'cd /var/www/html && npx vue-tsc --noEmit'
+	@curl -fsS -o /dev/null $(APP_URL)/login && echo "  ✓ login page reachable"
+	@curl -fsS -o /dev/null $(APP_URL)/horizon && echo "  ✓ horizon reachable"
+	@docker compose exec -T laravel.test sh -lc 'cd /var/www/html && PLAYWRIGHT_BASE_URL=$(APP_URL) npx playwright test tests/Playwright/smoke.spec.ts --project=chromium'
+	@echo "  ✓ visual verification complete"
 
 pint: ## Auto-fix formatting via Laravel Pint
 	@$(SAIL) pint --dirty --format agent
