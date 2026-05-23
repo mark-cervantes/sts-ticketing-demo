@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { VueDraggable } from 'vue-draggable-plus'
 import { InboxIcon, LoaderCircleIcon } from '@lucide/vue'
+import { ref, watch } from 'vue'
 
 interface KanbanColumnProps {
   column: KanbanColumnDef
@@ -19,16 +20,12 @@ const emit = defineEmits<{
   selectIssue: [issueId: number]
 }>()
 
-function handleDragEnd(evt: { item?: { dataset?: { issueId?: string; fromStatus?: string } } }): void {
-  // vue-draggable-plus fires the end event — we handle via onUpdate/onAdd on the group
-}
-
-function handleAdd(evt: {
-  data?: { id?: number; status?: IssueStatus }
-  item?: HTMLElement
-}): void {
-  // Handled by the move callback on VueDraggable
-}
+// vue-draggable-plus uses v-model with the default slot (not #item slots).
+// Keep a local copy that syncs from the parent's reactive column.issues.
+const localIssues = ref([...props.column.issues])
+watch(() => props.column.issues, (newIssues) => {
+  localIssues.value = [...newIssues]
+}, { deep: true })
 </script>
 
 <template>
@@ -55,40 +52,36 @@ function handleAdd(evt: {
     <!-- Card list with drag-drop -->
     <VueDraggable
       v-else
-      :model-value="column.issues"
+      v-model="localIssues"
       group="kanban"
-      item-key="id"
       :animation="200"
       ghost-class="opacity-30"
       drag-class="rotate-2"
       class="flex-1 space-y-2 overflow-y-auto px-2 pb-2"
       :class="column.issues.length === 0 ? 'min-h-[120px]' : ''"
       :data-status="column.status"
-      @update:model-value="() => {}"
     >
-      <template #item="{ element }">
-        <div
-          :data-issue-id="element.id"
-          :data-from-status="element.status"
-        >
-          <IssueCard
-            :issue="element"
-            @select="(id: number) => emit('selectIssue', id)"
-          />
-        </div>
-      </template>
-
-      <!-- Empty state (shown when no items and not loading) -->
-      <template #footer>
-        <div
-          v-if="column.issues.length === 0"
-          class="flex flex-col items-center justify-center py-8 text-muted-foreground"
-        >
-          <InboxIcon class="mb-2 size-8 opacity-40" />
-          <p class="text-xs">No issues</p>
-        </div>
-      </template>
+      <div
+        v-for="issue in localIssues"
+        :key="issue.id"
+        :data-issue-id="issue.id"
+        :data-from-status="issue.status"
+      >
+        <IssueCard
+          :issue="issue"
+          @select="(id: number) => emit('selectIssue', id)"
+        />
+      </div>
     </VueDraggable>
+
+    <!-- Empty state (shown when no items and not loading) -->
+    <div
+      v-if="!skeletonLoading && column.issues.length === 0"
+      class="flex flex-col items-center justify-center py-8 text-muted-foreground"
+    >
+      <InboxIcon class="mb-2 size-8 opacity-40" />
+      <p class="text-xs">No issues</p>
+    </div>
 
     <!-- Load more button -->
     <div v-if="column.hasMore && !skeletonLoading" class="px-2 pb-2">
