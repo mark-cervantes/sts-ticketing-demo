@@ -199,7 +199,7 @@ export function useKanbanBoard() {
       if (response.status === 409) {
         // Optimistic lock conflict — revert
         revertMove(updatedIssue, fromStatus, toStatus, issueIndex)
-        toast.error('This issue was updated by someone else. The board has been refreshed.', {
+        toast.error('This issue was updated by another user. Your changes were not saved.', {
           duration: 5000,
         })
         return

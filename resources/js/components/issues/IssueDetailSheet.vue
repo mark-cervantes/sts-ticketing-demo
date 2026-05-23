@@ -77,10 +77,12 @@ const {
   saving,
   deleting,
   error,
+  conflictDetected,
   fetchIssue,
   patchIssue,
   deleteIssue,
   clearIssue,
+  clearConflict,
   setIssueQueryParam,
   clearIssueQueryParam,
 } = useIssueDetail()
@@ -88,6 +90,7 @@ const {
 const { categories, fetchCategories } = useCategories()
 
 const deleteDialogOpen = ref(false)
+const conflictDialogOpen = ref(false)
 const datePickerOpen = ref(false)
 const editingTitle = ref(false)
 const titleInputRef = ref<HTMLInputElement | null>(null)
@@ -190,6 +193,27 @@ watch(issue, (val) => {
     localDescription.value = val.description
   }
 })
+
+// Open conflict dialog when the composable signals a 409 conflict
+watch(conflictDetected, (detected) => {
+  if (detected) {
+    conflictDialogOpen.value = true
+  }
+})
+
+function handleConflictReload(): void {
+  // Fresh data already fetched by patchIssue on 409 — locals synced via watch(issue).
+  // User can retry their edit with the refreshed updated_at.
+  conflictDialogOpen.value = false
+  clearConflict()
+}
+
+function handleConflictDiscard(): void {
+  // Fresh data already fetched by patchIssue on 409 — locals synced via watch(issue).
+  // Simply close and let synced locals stand.
+  conflictDialogOpen.value = false
+  clearConflict()
+}
 
 function handleOpenChange(value: boolean): void {
   emit('update:open', value)
@@ -577,6 +601,26 @@ async function handleDelete(): Promise<void> {
             >
               <Loader2Icon v-if="deleting" class="mr-2 size-4 animate-spin" />
               {{ deleting ? 'Deleting…' : 'Delete' }}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <!-- Conflict resolution dialog -->
+      <AlertDialog v-model:open="conflictDialogOpen">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Conflict detected</AlertDialogTitle>
+            <AlertDialogDescription>
+              This issue was updated by another user. Your changes were not saved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel @click.prevent="handleConflictDiscard">
+              Discard
+            </AlertDialogCancel>
+            <AlertDialogAction @click.prevent="handleConflictReload">
+              Reload &amp; Retry
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -9,6 +9,7 @@ const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const error = ref<string | null>(null)
+const conflictDetected = ref(false)
 
 export function useIssueDetail() {
   const { updateIssueInBoard, removeIssueFromBoard } = useKanbanBoard()
@@ -31,9 +32,9 @@ export function useIssueDetail() {
   /**
    * Patch a single field (or multiple fields) on the current issue.
    * Sends `updated_at` for optimistic locking.
-   * On 409 conflict: toast + re-fetch fresh data.
+   * Returns `true` on success, `false` on non-conflict error, `'conflict'` on 409.
    */
-  async function patchIssue(fields: Record<string, unknown>): Promise<boolean> {
+  async function patchIssue(fields: Record<string, unknown>): Promise<boolean | 'conflict'> {
     if (!issue.value) return false
 
     const currentIssue = issue.value
@@ -47,9 +48,9 @@ export function useIssueDetail() {
       })
 
       if (response.status === 409) {
-        toast.error('This issue was updated by someone else. Refreshing…', { duration: 5000 })
         await fetchIssue(currentIssue.id)
-        return false
+        conflictDetected.value = true
+        return 'conflict'
       }
 
       if (response.status === 401) {
@@ -144,16 +145,23 @@ export function useIssueDetail() {
     return isNaN(id) || id <= 0 ? null : id
   }
 
+  /** Reset the conflict flag (call after handling the dialog). */
+  function clearConflict(): void {
+    conflictDetected.value = false
+  }
+
   return {
     issue: readonly(issue),
     loading: readonly(loading),
     saving: readonly(saving),
     deleting: readonly(deleting),
     error: readonly(error),
+    conflictDetected: readonly(conflictDetected),
     fetchIssue,
     patchIssue,
     deleteIssue,
     clearIssue,
+    clearConflict,
     setIssueQueryParam,
     clearIssueQueryParam,
     getIssueQueryParam,
