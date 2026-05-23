@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 04 COMPLETE ✅ — 283 tests, all passing. 24 done tasks across sprints 01–04.
+> **Status:** ALL SPRINTS COMPLETE ✅ — 283 tests, all passing. 28 done tasks across sprints 01–05. Project ready for deployment.
 
 ## Dev Environment Reminder
 
@@ -111,16 +111,16 @@ When all `XX.*` tasks are in `done/`:
 | 04.03.00 | Optimistic Locking UI        | ✅ done    | Sprint 03   | feature/optimistic-lock   | w/ 04.01  |
 | 04.04.00 | Share UI (slide-over section)| ✅ done    | 04.01       | feature/share-ui          | —         |
 
-### Sprint 05: Deployment + Documentation ← NEXT
+### Sprint 05: Deployment + Documentation ✅
 > One deployable outcome: production Docker setup works, README complete, submitted.
-> Note: Sail's `compose.yaml` is DEV-only. Production needs its own setup.
+> **283 tests, all passing. Production-ready with Caddy + Docker Compose.**
 
 | Task ID  | Title                            | Status     | Depends On  | Branch                    | Parallel? |
 |----------|----------------------------------|------------|-------------|---------------------------|-----------|
-| 05.01.00 | Production Dockerfile + compose  | backlog    | Sprint 04   | feature/prod-docker       | —         |
-| 05.02.00 | Caddy + domain config            | backlog    | 05.01       | feature/deployment        | —         |
-| 05.03.00 | README + Architecture doc        | backlog    | —           | feature/readme            | w/ 05.01  |
-| 05.04.00 | Final seed verification          | backlog    | 05.01       | feature/final-polish      | w/ 05.03  |
+| 05.01.00 | Production Dockerfile + compose  | ✅ done    | Sprint 04   | feature/prod-docker       | —         |
+| 05.02.00 | Caddy + domain config            | ✅ done    | 05.01       | feature/deployment        | —         |
+| 05.03.00 | README + Architecture doc        | ✅ done    | —           | feature/readme            | w/ 05.01  |
+| 05.04.00 | Final seed verification          | ✅ done    | 05.01       | feature/final-polish      | w/ 05.03  |
 
 ---
 
