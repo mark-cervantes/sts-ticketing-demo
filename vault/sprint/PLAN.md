@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** ALL SPRINTS COMPLETE ✅ — 283 tests, all passing. 28 done tasks across sprints 01–05. Project ready for deployment.
+> **Status:** Sprint 06 (Production Fixes) + Sprint 07 (UX Improvements) planned. 28 done tasks across sprints 01–05. 7 new tasks in backlog.
 
 ## Dev Environment Reminder
 
@@ -121,6 +121,41 @@ When all `XX.*` tasks are in `done/`:
 | 05.02.00 | Caddy + domain config            | ✅ done    | 05.01       | feature/deployment        | —         |
 | 05.03.00 | README + Architecture doc        | ✅ done    | —           | feature/readme            | w/ 05.01  |
 | 05.04.00 | Final seed verification          | ✅ done    | 05.01       | feature/final-polish      | w/ 05.03  |
+
+### Sprint 06: Production Hotfixes (Critical)
+> Priority: **HIGH** — these are production blockers found during manual testing.
+> One deployable outcome: AI summaries work, Kanban drag-drop persists status changes.
+
+| Task ID  | Title                                      | Status     | Depends On  | Branch                          | Parallel? |
+|----------|--------------------------------------------|------------|-------------|---------------------------------|-----------|
+| 06.01.00 | Fix Horizon/scheduler entrypoint (CMD)     | ⬜ backlog | —           | fix/task-06.01-horizon-entrypoint | —        |
+| 06.02.00 | Reset stuck summaries + verify pipeline    | ⬜ backlog | 06.01       | fix/task-06.02-stuck-summaries  | —         |
+| 06.03.00 | Wire Kanban drag-drop to update status     | ⬜ backlog | —           | fix/task-06.03-kanban-drag-status | w/ 06.01 |
+
+### Sprint 07: UX Improvements
+> Priority: **MEDIUM** — user-reported friction from manual testing.
+> One deployable outcome: category management, creator visibility, comment UX, emoji reactions.
+
+| Task ID  | Title                                      | Status     | Depends On  | Branch                                | Parallel? |
+|----------|--------------------------------------------|------------|-------------|---------------------------------------|-----------|
+| 07.01.00 | Category management UI (create/delete)     | ⬜ backlog | —           | feat/task-07.01-category-management-ui | —        |
+| 07.02.00 | Show issue creator on Kanban cards         | ⬜ backlog | —           | feat/task-07.02-issue-creator-display | w/ 07.01  |
+| 07.03.00 | Comment permissions UX (explain disabled)  | ⬜ backlog | 07.02       | feat/task-07.03-comment-permissions-ux | —        |
+| 07.04.00 | Emoji reactions on comments                | ⬜ backlog | 07.03       | feat/task-07.04-comment-emoji-reactions | —       |
+
+---
+
+## Dependency Graph (Sprints 06–07)
+
+```
+06.01 ──→ 06.02           (Horizon fix → retry stuck summaries)
+06.03                      (independent — drag-drop fix)
+07.01                      (independent — category UI)
+07.02 ──→ 07.03 ──→ 07.04 (creator display → comment UX → emoji reactions)
+```
+
+## Critical Path (Sprint 06)
+06.01 → 06.02 (Horizon must run before summaries can be retried)
 
 ---
 
