@@ -108,7 +108,7 @@ class IssueController extends Controller
     {
         $this->authorize('view', $issue);
 
-        $issue->load(['comments.user', 'category', 'user']);
+        $issue->load(['comments.user', 'comments.reactions.user', 'category', 'user']);
 
         return new IssueResource($issue);
     }
