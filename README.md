@@ -330,23 +330,45 @@ Production deployment uses `docker-compose.prod.yml` with Caddy as the reverse p
 # On the target host (192.168.254.140 or equivalent)
 git clone <repo> ticketing-system
 cd ticketing-system
-cp .env.example .env.prod
-# Edit .env.prod: set APP_KEY, DB_PASSWORD, OLLAMA_URL, OPENROUTER_API_KEY, etc.
-docker compose -f docker-compose.prod.yml up -d
+
+# 1. Configure environment
+cp .env.production.example .env.prod
+#    Edit .env.prod: set APP_KEY, DB_PASSWORD, REDIS_PASSWORD, etc.
+#    APP_URL and TRUSTED_PROXIES are already set for sts-demo.betamaxgroup.tech
+
+# 2. Start the Docker stack (nginx binds to 127.0.0.1:8080 — localhost only)
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+# 3. Run migrations (seeds are automatic if SEED_ON_STARTUP=true)
 docker compose -f docker-compose.prod.yml exec app php artisan migrate --force
-docker compose -f docker-compose.prod.yml exec app php artisan db:seed --force
+
+# 4. Configure Caddy on the host (Caddy runs outside Docker)
+#    Option A — append to the existing Caddyfile:
+sudo tee -a /etc/caddy/Caddyfile < Caddyfile.prod
+#    Option B — import from the project directory:
+#    Add `import /path/to/ticketing-system/Caddyfile.prod` to /etc/caddy/Caddyfile
+
+# 5. Reload Caddy to activate HTTPS + routing
+sudo caddy reload --config /etc/caddy/Caddyfile
 ```
+
+> **First deploy only:** set `SEED_ON_STARTUP=true` in `.env.prod` before step 2.
+> After the container starts and seeds, set it back to `false` to prevent re-seeding on restart.
 
 ### Production services
 
 | Service | Image | Purpose |
 |---|---|---|
-| `app` | Generic PHP 8.4 + Node | Laravel app + Vite build |
+| `app` | Custom PHP 8.4-FPM | Laravel app (FPM) |
+| `nginx` | nginx:alpine | HTTP server → app:9000 (FPM) |
 | `horizon` | Same as app | Queue worker (Horizon) |
 | `scheduler` | Same as app | `schedule:run` loop |
-| `postgres` | postgres:16-alpine | Database |
+| `postgres` | postgres:18-alpine | Database |
 | `redis` | redis:7-alpine | Queue + cache |
-| `caddy` | caddy:2-alpine | Reverse proxy + automatic TLS |
+
+> **Caddy runs on the HOST, not inside Docker.** It listens on 443/80, handles
+> automatic TLS via ACME, and reverse-proxies to `127.0.0.1:8080` (the nginx
+> container port, bound to localhost only). See `Caddyfile.prod` at the repo root.
 
 > **Note:** `make` targets are for the Sail dev environment only. Use `docker compose -f docker-compose.prod.yml exec app php artisan ...` for production operations.
 
