@@ -9,6 +9,7 @@ import {
   FlameIcon,
   MessageCircleIcon,
   CalendarIcon,
+  SparklesIcon,
 } from '@lucide/vue'
 import type { PageProps } from '@/types'
 
@@ -104,8 +105,15 @@ function handlePointerUp(evt: PointerEvent): void {
       />
     </div>
 
-    <!-- Summary preview -->
-    <p v-if="truncatedSummary" class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+    <!-- Summary preview / AI shimmer -->
+    <div
+      v-if="issue.summary_status === 'pending' || issue.summary_status === 'processing'"
+      class="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      <SparklesIcon class="size-3 animate-pulse text-primary/60" />
+      <span class="animate-pulse">AI analyzing…</span>
+    </div>
+    <p v-else-if="truncatedSummary" class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
       {{ truncatedSummary }}
     </p>
 
