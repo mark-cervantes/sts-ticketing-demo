@@ -40,6 +40,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import CommentThread from '@/components/issues/CommentThread.vue'
 import {
   FlameIcon,
   MoreHorizontalIcon,
@@ -521,10 +522,14 @@ async function handleDelete(): Promise<void> {
           Sharing — coming soon
         </div>
 
-        <!-- Comment thread placeholder (slot for 03.05) -->
-        <div class="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-          Comments — coming soon
-        </div>
+        <!-- Comment thread -->
+        <CommentThread
+          :comments="issue.comments ?? []"
+          :issue-id="issue.id"
+          :can-comment="issue.can_comment ?? false"
+          :comments-count="issue.comments_count"
+          :issue-status="issue.status"
+        />
 
         <!-- Meta info -->
         <div class="space-y-1 border-t border-border pt-3 text-xs text-muted-foreground">

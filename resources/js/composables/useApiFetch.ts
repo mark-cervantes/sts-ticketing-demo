@@ -34,6 +34,19 @@ export async function apiFetch<T>(url: string): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export async function apiPost(url: string, body: Record<string, unknown>): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-XSRF-TOKEN': getCsrfToken(),
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function apiPatch(url: string, body: Record<string, unknown>): Promise<Response> {
   return fetch(url, {
     method: 'PATCH',

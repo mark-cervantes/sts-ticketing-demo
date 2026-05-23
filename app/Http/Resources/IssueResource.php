@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Issue API resource — shapes the JSON response for the Issue CRUD API.
@@ -69,6 +70,9 @@ class IssueResource extends JsonResource
                     ],
                 ]);
             }),
+
+            // Permission gate for comment input visibility
+            'can_comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
         ];
     }
 }
