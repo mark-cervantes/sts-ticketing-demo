@@ -7,7 +7,7 @@ export type IssueStatus = 'open' | 'in_progress' | 'resolved'
 
 export type IssuePriority = 'low' | 'medium' | 'high' | 'critical'
 
-export type SummaryStatus = 'pending' | 'processing' | 'completed' | 'failed'
+export type SummaryStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 export type IssueVisibility = 'private' | 'shared'
 
