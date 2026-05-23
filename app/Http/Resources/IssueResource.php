@@ -59,7 +59,9 @@ class IssueResource extends JsonResource
             ]),
 
             // comments present on show (whenLoaded); absent on list
-            'comments' => $this->whenLoaded('comments', function () {
+            'comments' => $this->whenLoaded('comments', function () use ($request) {
+                $userId = $request->user()?->id;
+
                 return $this->comments->map(fn ($comment) => [
                     'id' => $comment->id,
                     'body' => $comment->body,
@@ -68,6 +70,7 @@ class IssueResource extends JsonResource
                         'id' => $comment->user->id,
                         'name' => $comment->user->name,
                     ],
+                    'reactions_summary' => $comment->reactionsSummary($userId),
                 ]);
             }),
 

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2Icon, MessageSquareIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import CommentReactions from '@/components/issues/CommentReactions.vue'
 
 interface CommentThreadProps {
   comments: readonly IssueComment[] | IssueComment[]
@@ -144,6 +145,10 @@ async function handleSubmit(): Promise<void> {
         <p class="whitespace-pre-wrap text-sm text-foreground">
           {{ comment.body }}
         </p>
+        <CommentReactions
+          :comment-id="comment.id"
+          :initial-reactions="comment.reactions_summary"
+        />
       </div>
     </div>
 
