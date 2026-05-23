@@ -25,6 +25,14 @@ Route::middleware('auth')->group(function () {
     Route::get('comments/{comment}/reactions', [CommentReactionController::class, 'index']);
 });
 
+// AI — regenerate summary + triage suggestions
+Route::middleware('auth')->group(function () {
+    Route::post('issues/{issue}/regenerate-summary', [IssueController::class, 'regenerateSummary']);
+    // triage-suggest must be declared BEFORE the apiResource wildcard to avoid
+    // the {issue} segment swallowing "triage-suggest" as an issue ID.
+    Route::post('issues/triage-suggest', [IssueController::class, 'triageSuggest']);
+});
+
 // AI settings
 Route::middleware('auth')->group(function () {
     Route::get('settings/ai', [AiSettingsController::class, 'show']);

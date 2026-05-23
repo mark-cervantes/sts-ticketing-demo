@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\SummaryStatus;
 use App\Http\Requests\StoreIssueRequest;
+use App\Http\Requests\TriageSuggestRequest;
 use App\Http\Requests\UpdateIssueRequest;
 use App\Http\Resources\IssueResource;
+use App\Jobs\GenerateSummaryJob;
 use App\Models\Issue;
+use App\Services\Ai\TriageService;
 use App\Services\IssueService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,7 +25,10 @@ use Illuminate\Http\Response;
  */
 class IssueController extends Controller
 {
-    public function __construct(private readonly IssueService $service) {}
+    public function __construct(
+        private readonly IssueService $service,
+        private readonly TriageService $triageService,
+    ) {}
 
     /** Allowed sort fields for ?sort= query param (G2). */
     private const SORTABLE = ['created_at', 'updated_at', 'priority', 'deadline_at'];
@@ -135,5 +142,47 @@ class IssueController extends Controller
         $this->service->delete($issue);
 
         return response()->noContent();
+    }
+
+    /**
+     * POST /api/issues/{issue}/regenerate-summary
+     *
+     * Intentional, user-triggered re-generation. Resets summary fields to
+     * pending and dispatches GenerateSummaryJob. Any user who can view the
+     * issue may request regeneration.
+     *
+     * @see task 08.04 / SPEC §5.3
+     */
+    public function regenerateSummary(Issue $issue): JsonResponse
+    {
+        $this->authorize('view', $issue);
+
+        $issue->summary_status = SummaryStatus::Pending;
+        $issue->summary = null;
+        $issue->suggested_next_action = null;
+        $issue->save();
+
+        dispatch(new GenerateSummaryJob($issue));
+
+        return response()->json(['message' => 'Summary regeneration queued'], 202);
+    }
+
+    /**
+     * POST /api/issues/triage-suggest
+     *
+     * One-shot, synchronous AI triage suggestion for a new issue before it is
+     * saved. Returns a suggested priority and category based on title +
+     * description. Results are NOT cached — they are re-evaluated on each call.
+     *
+     * @see task 08.04 / ADR-002
+     */
+    public function triageSuggest(TriageSuggestRequest $request): JsonResponse
+    {
+        $result = $this->triageService->suggest(
+            $request->input('title'),
+            $request->input('description'),
+        );
+
+        return response()->json(['data' => $result]);
     }
 }
