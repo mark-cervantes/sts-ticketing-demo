@@ -100,15 +100,15 @@ When all `XX.*` tasks are in `done/`:
 | 03.05.00 | Comment thread UI            | ✅ done    | 03.04       | feature/comment-ui        | —         |
 | 03.06.00 | SSE client (summary live)    | ✅ done    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
 
-### Sprint 04: Stretch Features
+### Sprint 04: Stretch Features ← NEXT
 > One deployable outcome: sharing, scheduler, optimistic locking — all stretch items.
 
-| Task ID  | Title                        | Depends On  | Branch                    | Parallel? |
-|----------|------------------------------|-------------|---------------------------|-----------|
-| 04.01.00 | Sharing + Visibility         | Sprint 03   | feature/sharing           | —         |
-| 04.02.00 | Scheduler (needs_attention)  | Sprint 02   | feature/scheduler         | w/ 04.01  |
-| 04.03.00 | Optimistic Locking           | Sprint 02   | feature/optimistic-lock   | w/ 04.01  |
-| 04.04.00 | Share UI (modal section)     | 04.01, 03.04| feature/share-ui          | —         |
+| Task ID  | Title                        | Status     | Depends On  | Branch                    | Parallel? |
+|----------|------------------------------|------------|-------------|---------------------------|-----------|
+| 04.01.00 | Sharing + Visibility         | backlog    | Sprint 03   | feature/sharing           | —         |
+| 04.02.00 | Scheduler (needs_attention)  | backlog    | Sprint 02   | feature/scheduler         | w/ 04.01  |
+| 04.03.00 | Optimistic Locking UI        | backlog    | Sprint 03   | feature/optimistic-lock   | w/ 04.01  |
+| 04.04.00 | Share UI (slide-over section)| backlog    | 04.01       | feature/share-ui          | —         |
 
 ### Sprint 05: Deployment + Documentation
 > One deployable outcome: production Docker setup works, README complete, submitted.
