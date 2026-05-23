@@ -203,3 +203,12 @@ clean-logs: ## Truncate dev log files
 	@: > $(VITE_LOG) || true
 	@: > $(QUEUE_LOG) || true
 	@echo "✓ logs cleaned"
+
+# Deployment
+# ──────────────────────────────────────────────────────────────────────────
+
+deploy: ## Deploy to production (192.168.254.140) via SSH
+	@./scripts/deploy.sh
+
+deploy-first: ## First-time production deploy (clones repo + sets up everything)
+	@./scripts/deploy.sh --first-run
