@@ -89,6 +89,11 @@ class AiSettingsController extends Controller
         // Flush cached model list when settings change.
         Cache::forget('ai_settings.openrouter_models');
 
+        // Queue workers cache config at boot time. After changing AI settings,
+        // signal all workers to restart so they pick up the new DB values
+        // via AppServiceProvider::bootAiSettings() on their next boot cycle.
+        \Illuminate\Support\Facades\Artisan::call('queue:restart');
+
         return response()->json([
             'data' => $this->formatSettings($settings),
         ]);
