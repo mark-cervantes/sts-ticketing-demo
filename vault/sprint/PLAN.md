@@ -114,12 +114,12 @@ When all `XX.*` tasks are in `done/`:
 > One deployable outcome: production Docker setup works, README complete, submitted.
 > Note: Sail's `compose.yaml` is DEV-only. Production needs its own setup.
 
-| Task ID  | Title                            | Depends On  | Branch                    | Parallel? |
-|----------|----------------------------------|-------------|---------------------------|-----------|
-| 05.01.00 | Production Dockerfile + compose  | Sprint 04   | feature/prod-docker       | —         |
-| 05.02.00 | Caddy + domain config            | 05.01       | feature/deployment        | —         |
-| 05.03.00 | README + Architecture doc        | All         | feature/readme            | —         |
-| 05.04.00 | Final seed verification          | 05.01       | feature/final-polish      | w/ 05.03  |
+| Task ID  | Title                            | Status     | Depends On  | Branch                    | Parallel? |
+|----------|----------------------------------|------------|-------------|---------------------------|-----------|
+| 05.01.00 | Production Dockerfile + compose  | backlog    | Sprint 04   | feature/prod-docker       | —         |
+| 05.02.00 | Caddy + domain config            | backlog    | 05.01       | feature/deployment        | —         |
+| 05.03.00 | README + Architecture doc        | backlog    | —           | feature/readme            | w/ 05.01  |
+| 05.04.00 | Final seed verification          | backlog    | 05.01       | feature/final-polish      | w/ 05.03  |
 
 ---
 
