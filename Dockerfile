@@ -1,20 +1,5 @@
-# ─── Stage 1: Node — build frontend assets ───────────────────────────────────
-FROM node:22-alpine AS node
-
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY resources/ resources/
-COPY public/ public/
-COPY vite.config.js tsconfig.json ./
-
-# Skip vue-tsc in Docker (vendor/ziggy types unavailable in node stage).
-# Type checking is done in CI and local dev (`make verify-visual`).
-RUN npx vite build
-
-# ─── Stage 2: Composer — install PHP dependencies (no dev) ───────────────────
+# ─── Stage 1: Composer — install PHP dependencies (no dev) ───────────────────
+# Runs first so the node stage can COPY vendor/tightenco/ziggy for Vite build.
 FROM composer:2 AS composer
 
 WORKDIR /app
@@ -28,6 +13,25 @@ RUN composer install \
     --prefer-dist \
     --ignore-platform-req=ext-pcntl \
     --no-scripts
+
+# ─── Stage 2: Node — build frontend assets ───────────────────────────────────
+FROM node:22-alpine AS node
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY resources/ resources/
+COPY public/ public/
+COPY vite.config.js tsconfig.json ./
+
+# Ziggy is imported in app.ts from vendor/ — copy it from the composer stage
+COPY --from=composer /app/vendor/tightenco ./vendor/tightenco
+
+# Skip vue-tsc in Docker (full vendor tree not available for type resolution).
+# Type checking is done in CI and local dev (`make verify-visual`).
+RUN npx vite build
 
 # ─── Stage 3: Final — PHP 8.4-FPM production image ──────────────────────────
 FROM php:8.4-fpm-alpine AS final
