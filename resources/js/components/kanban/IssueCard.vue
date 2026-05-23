@@ -2,12 +2,15 @@
 import type { Issue } from '@/types/issue'
 import { PRIORITY_CONFIG } from '@/types/issue'
 import { computed, ref } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   FlameIcon,
   MessageCircleIcon,
   CalendarIcon,
 } from '@lucide/vue'
+import type { PageProps } from '@/types'
 
 interface IssueCardProps {
   issue: Issue
@@ -18,6 +21,17 @@ const props = defineProps<IssueCardProps>()
 const emit = defineEmits<{
   select: [issueId: number]
 }>()
+
+const page = usePage<PageProps>()
+
+const isOwnIssue = computed(() => page.props.auth.user.id === props.issue.user.id)
+
+/** Derive 1–2 character initials from a full name. */
+const creatorInitials = computed(() => {
+  const parts = props.issue.user.name.trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+})
 
 const priorityLabel = computed(() => PRIORITY_CONFIG[props.issue.priority].label)
 
@@ -105,7 +119,7 @@ function handlePointerUp(evt: PointerEvent): void {
       </Badge>
     </div>
 
-    <!-- Footer row: deadline + comments count -->
+    <!-- Footer row: deadline + comments count + creator avatar -->
     <div class="mt-2.5 flex items-center gap-3 text-xs text-muted-foreground">
       <span
         v-if="formattedDeadline"
@@ -122,6 +136,22 @@ function handlePointerUp(evt: PointerEvent): void {
         <MessageCircleIcon class="size-3" />
         {{ issue.comments_count }}
       </span>
+
+      <!-- Creator avatar — pushed to the right -->
+      <Avatar
+        size="sm"
+        class="ml-auto"
+        :title="isOwnIssue ? 'You' : issue.user.name"
+        :aria-label="isOwnIssue ? 'Created by you' : `Created by ${issue.user.name}`"
+      >
+        <AvatarFallback
+          :class="isOwnIssue
+            ? 'bg-primary text-primary-foreground'
+            : 'bg-muted text-muted-foreground'"
+        >
+          {{ isOwnIssue ? 'You' : creatorInitials }}
+        </AvatarFallback>
+      </Avatar>
     </div>
   </div>
 </template>
