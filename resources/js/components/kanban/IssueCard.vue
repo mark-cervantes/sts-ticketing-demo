@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Issue } from '@/types/issue'
 import { PRIORITY_CONFIG } from '@/types/issue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import {
   FlameIcon,
@@ -14,6 +14,10 @@ interface IssueCardProps {
 }
 
 const props = defineProps<IssueCardProps>()
+
+const emit = defineEmits<{
+  select: [issueId: number]
+}>()
 
 const priorityLabel = computed(() => PRIORITY_CONFIG[props.issue.priority].label)
 
@@ -47,11 +51,32 @@ const isOverdue = computed(() => {
   if (!props.issue.deadline_at) return false
   return new Date(props.issue.deadline_at) < new Date()
 })
+
+// Click-vs-drag discrimination: track pointer position
+const pointerStart = ref<{ x: number; y: number } | null>(null)
+const CLICK_THRESHOLD = 5
+
+function handlePointerDown(evt: PointerEvent): void {
+  pointerStart.value = { x: evt.clientX, y: evt.clientY }
+}
+
+function handlePointerUp(evt: PointerEvent): void {
+  if (!pointerStart.value) return
+  const dx = Math.abs(evt.clientX - pointerStart.value.x)
+  const dy = Math.abs(evt.clientY - pointerStart.value.y)
+  pointerStart.value = null
+
+  if (dx < CLICK_THRESHOLD && dy < CLICK_THRESHOLD) {
+    emit('select', props.issue.id)
+  }
+}
 </script>
 
 <template>
   <div
     class="group cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing active:shadow-lg"
+    @pointerdown="handlePointerDown"
+    @pointerup="handlePointerUp"
   >
     <!-- Top row: title + needs_attention -->
     <div class="flex items-start gap-2">

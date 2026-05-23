@@ -1,19 +1,43 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import type { IssueStatus, Issue } from '@/types/issue'
+import type { IssueStatus } from '@/types/issue'
 import { useKanbanBoard } from '@/composables/useKanbanBoard'
+import { useIssueDetail } from '@/composables/useIssueDetail'
 import KanbanColumn from '@/components/kanban/KanbanColumn.vue'
+import IssueDetailSheet from '@/components/issues/IssueDetailSheet.vue'
 
 const { columns, initialLoading, loadInitial, loadMore, moveIssue } = useKanbanBoard()
+const { getIssueQueryParam } = useIssueDetail()
 
 const dragFromStatus = ref<IssueStatus | null>(null)
+const sheetOpen = ref(false)
+const selectedIssueId = ref<number | null>(null)
 
 onMounted(() => {
   void loadInitial()
+
+  // Auto-open slide-over if ?issue= query param is present
+  const issueId = getIssueQueryParam()
+  if (issueId) {
+    selectedIssueId.value = issueId
+    sheetOpen.value = true
+  }
 })
 
 function handleLoadMore(status: IssueStatus): void {
   void loadMore(status)
+}
+
+function handleSelectIssue(issueId: number): void {
+  selectedIssueId.value = issueId
+  sheetOpen.value = true
+}
+
+function handleSheetOpenChange(value: boolean): void {
+  sheetOpen.value = value
+  if (!value) {
+    selectedIssueId.value = null
+  }
 }
 
 /**
@@ -62,6 +86,7 @@ function handleDragEnd(evt: DragEvent): void {
       :column="col"
       :skeleton-loading="initialLoading"
       @load-more="handleLoadMore"
+      @select-issue="handleSelectIssue"
     />
 
     <!-- If no columns visible (all statuses filtered out) -->
@@ -72,4 +97,11 @@ function handleDragEnd(evt: DragEvent): void {
       <p class="text-sm">Select at least one status filter to see issues.</p>
     </div>
   </div>
+
+  <!-- Issue detail slide-over -->
+  <IssueDetailSheet
+    :open="sheetOpen"
+    :issue-id="selectedIssueId"
+    @update:open="handleSheetOpenChange"
+  />
 </template>
