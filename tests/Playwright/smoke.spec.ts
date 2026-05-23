@@ -34,7 +34,10 @@ test('auth and operator pages render without browser errors', async ({ page }) =
     await page.getByRole('button', { name: 'Log in' }).click();
 
     await page.waitForURL('**/dashboard');
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+    // Kanban board renders three columns
+    await expect(page.getByRole('heading', { name: 'Open' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'In Progress' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Resolved' })).toBeVisible();
     await page.screenshot({ path: `${smokeArtifactDirectory}/dashboard.png`, fullPage: true });
 
     await page.goto('/profile');
