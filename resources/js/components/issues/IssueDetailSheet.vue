@@ -42,6 +42,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import CommentThread from '@/components/issues/CommentThread.vue'
+import ShareSection from '@/components/issues/ShareSection.vue'
 import {
   FlameIcon,
   MoreHorizontalIcon,
@@ -560,10 +561,8 @@ async function handleDelete(): Promise<void> {
           </p>
         </div>
 
-        <!-- Sharing placeholder -->
-        <div class="rounded-lg border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
-          Sharing — coming soon
-        </div>
+        <!-- Sharing -->
+        <ShareSection :issue="issue" />
 
         <!-- Comment thread -->
         <CommentThread

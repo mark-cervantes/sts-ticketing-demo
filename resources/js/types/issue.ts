@@ -11,6 +11,28 @@ export type SummaryStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
 export type IssueVisibility = 'private' | 'shared'
 
+export type SharePermission = 'view' | 'comment' | 'edit'
+
+export interface ShareUser {
+  id: number
+  name: string
+  email: string
+}
+
+export interface Share {
+  id: number
+  permission: SharePermission
+  created_at: string
+  user: ShareUser
+}
+
+/** Display labels for share permissions. */
+export const PERMISSION_LABELS: Record<SharePermission, string> = {
+  view: 'Can view',
+  comment: 'Can comment',
+  edit: 'Can edit',
+}
+
 export interface IssueUser {
   id: number
   name: string
