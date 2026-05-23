@@ -2,13 +2,17 @@
 import { PlusIcon, CircleDotIcon, AlertTriangleIcon, TagIcon, BarChart3Icon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+
+const emit = defineEmits<{
+  (e: 'create-issue'): void
+}>()
 </script>
 
 <template>
   <aside class="flex h-full w-[var(--sidebar-width)] flex-col bg-sidebar text-sidebar-foreground">
     <!-- New Issue button -->
     <div class="p-4">
-      <Button class="w-full gap-2" size="lg">
+      <Button class="w-full gap-2" size="lg" @click="emit('create-issue')">
         <PlusIcon class="size-4" />
         New Issue
       </Button>
