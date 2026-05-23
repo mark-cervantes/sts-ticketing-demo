@@ -1,0 +1,264 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Enums\Priority;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\UpdateAiSettingRequest;
+use App\Models\AiSetting;
+use App\Models\Category;
+use App\Models\Issue;
+use App\Models\User;
+use App\Services\Summary\Drivers\LlmDriver;
+use App\Services\Summary\Drivers\RulesDriver;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+
+/**
+ * Manages AI configuration settings.
+ *
+ * GET    /api/settings/ai          — show current settings (api_key masked)
+ * PUT    /api/settings/ai          — update settings
+ * POST   /api/settings/ai/test     — test the current config with a dummy issue
+ * GET    /api/settings/ai/models   — proxy OpenRouter model list (cached 1h)
+ *
+ * @see Task 08.01
+ */
+class AiSettingsController extends Controller
+{
+    // -------------------------------------------------------------------------
+    // GET /api/settings/ai
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return current AI settings with the api_key masked.
+     *
+     * The raw api_key is NEVER returned. Only api_key_set (bool) and
+     * api_key_masked (first 10 chars + '***') are exposed.
+     */
+    public function show(): JsonResponse
+    {
+        $settings = AiSetting::current();
+        $settings->load('updatedBy');
+
+        return response()->json([
+            'data' => $this->formatSettings($settings),
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // PUT /api/settings/ai
+    // -------------------------------------------------------------------------
+
+    /**
+     * Update the AI settings.
+     *
+     * api_key is only written when a non-empty string is provided.
+     * An empty / null api_key in the request preserves the existing key.
+     */
+    public function update(UpdateAiSettingRequest $request): JsonResponse
+    {
+        $settings = AiSetting::current();
+        $validated = $request->validated();
+
+        $settings->provider = $validated['provider'];
+
+        if (array_key_exists('base_url', $validated)) {
+            $settings->base_url = $validated['base_url'] ?: null;
+        }
+
+        if (array_key_exists('model', $validated)) {
+            $settings->model = $validated['model'] ?: null;
+        }
+
+        // Only overwrite api_key when a non-empty string is passed.
+        $incomingKey = $validated['api_key'] ?? null;
+
+        if (is_string($incomingKey) && $incomingKey !== '') {
+            $settings->api_key = $incomingKey;
+        }
+
+        $settings->updated_by = $request->user()->id;
+        $settings->save();
+
+        $settings->load('updatedBy');
+
+        // Flush cached model list when settings change.
+        Cache::forget('ai_settings.openrouter_models');
+
+        return response()->json([
+            'data' => $this->formatSettings($settings),
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /api/settings/ai/test
+    // -------------------------------------------------------------------------
+
+    /**
+     * Test the current AI configuration using a synthetic issue.
+     *
+     * Accepts optional request-body overrides (provider/base_url/api_key/model)
+     * so the user can test a configuration before saving it.
+     *
+     * Returns 422 on failure with the error message.
+     */
+    public function test(Request $request): JsonResponse
+    {
+        $settings = AiSetting::current();
+
+        // Allow temporary overrides from the request body (test-before-save).
+        $overrideProvider = $request->input('provider', $settings->provider);
+        $overrideBaseUrl = $request->input('base_url', $settings->effective_base_url);
+        $overrideApiKey = $request->input('api_key', $settings->api_key);
+        $overrideModel = $request->input('model', $settings->model);
+
+        $effectiveDriver = $overrideProvider === 'rules' ? 'rules' : 'llm';
+
+        if ($effectiveDriver === 'rules') {
+            // Rules driver needs no external calls — create a synthetic issue object.
+            $issue = $this->makeSyntheticIssue();
+
+            try {
+                $driver = new RulesDriver;
+                $result = $driver->generate($issue);
+            } catch (\Throwable $e) {
+                return response()->json(['error' => $e->getMessage()], 422);
+            }
+
+            return response()->json([
+                'driver' => 'rules',
+                'summary' => $result->summary,
+                'suggested_next_action' => $result->suggestedNextAction,
+            ]);
+        }
+
+        // LLM driver — push overrides into config temporarily.
+        config([
+            'summary.drivers.llm.base_url' => $overrideBaseUrl,
+            'summary.drivers.llm.api_key' => $overrideApiKey,
+            'summary.drivers.llm.model' => $overrideModel,
+            'summary.drivers.llm.timeout' => 30,
+        ]);
+
+        $issue = $this->makeSyntheticIssue();
+
+        try {
+            $driver = new LlmDriver(app(HttpFactory::class));
+            $result = $driver->generate($issue);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'driver' => 'llm',
+            'summary' => $result->summary,
+            'suggested_next_action' => $result->suggestedNextAction,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /api/settings/ai/models
+    // -------------------------------------------------------------------------
+
+    /**
+     * Proxy the OpenRouter model list.
+     *
+     * Only works when provider is 'openrouter' and an api_key is configured.
+     * Caches the response for 1 hour to avoid exposing the API key on every request.
+     * Returns 422 when the provider or key requirements are not met.
+     */
+    public function models(): JsonResponse
+    {
+        $settings = AiSetting::current();
+
+        if ($settings->provider !== 'openrouter') {
+            return response()->json(['error' => 'Model listing is only available for the openrouter provider.'], 422);
+        }
+
+        if (empty($settings->api_key)) {
+            return response()->json(['error' => 'An API key is required to fetch the OpenRouter model list.'], 422);
+        }
+
+        $models = Cache::remember('ai_settings.openrouter_models', 3600, function () use ($settings): mixed {
+            $response = Http::withToken((string) $settings->api_key)
+                ->timeout(15)
+                ->get('https://openrouter.ai/api/v1/models');
+
+            if ($response->failed()) {
+                return null;
+            }
+
+            return $response->json();
+        });
+
+        if ($models === null) {
+            Cache::forget('ai_settings.openrouter_models');
+
+            return response()->json(['error' => 'Failed to fetch models from OpenRouter.'], 422);
+        }
+
+        return response()->json($models);
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Format AiSetting for a JSON response.
+     * api_key is masked — raw value is never exposed.
+     *
+     * @return array<string, mixed>
+     */
+    private function formatSettings(AiSetting $settings): array
+    {
+        $apiKey = $settings->api_key;
+        $apiKeySet = ! empty($apiKey);
+        $apiKeyMasked = null;
+
+        if ($apiKeySet && is_string($apiKey)) {
+            $apiKeyMasked = mb_substr($apiKey, 0, 10).'***';
+        }
+
+        return [
+            'provider' => $settings->provider,
+            'base_url' => $settings->base_url,
+            'api_key_set' => $apiKeySet,
+            'api_key_masked' => $apiKeyMasked,
+            'model' => $settings->model,
+            'updated_by' => $settings->updatedBy ? [
+                'id' => $settings->updatedBy->id,
+                'name' => $settings->updatedBy->name,
+            ] : null,
+            'updated_at' => $settings->updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Build a synthetic Issue-like object for test calls.
+     *
+     * Uses a real Category model when one exists in the DB; otherwise creates
+     * an anonymous object so the driver can still run without DB dependencies.
+     */
+    private function makeSyntheticIssue(): Issue
+    {
+        /** @var Category|null $category */
+        $category = Category::first();
+
+        /** @var User $user */
+        $user = User::first() ?? User::factory()->create();
+
+        return Issue::factory()
+            ->for($user)
+            ->for($category ?? Category::factory()->create())
+            ->make([
+                'title' => 'Test issue: payment processing failure',
+                'description' => 'Customer reports that their credit card payment fails at checkout with error code 4012. The issue started after the last deployment on May 20th.',
+                'priority' => Priority::High,
+            ]);
+    }
+}
