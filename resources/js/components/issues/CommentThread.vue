@@ -184,5 +184,15 @@ async function handleSubmit(): Promise<void> {
         </Button>
       </div>
     </div>
+
+    <!-- Permission explanation when commenting is disabled -->
+    <div v-else class="rounded-md border border-dashed border-border bg-muted/20 px-4 py-3 text-center">
+      <p class="text-sm text-muted-foreground">
+        You don't have permission to comment on this issue.
+      </p>
+      <p class="mt-1 text-xs text-muted-foreground/70">
+        Ask the owner to share it with you.
+      </p>
+    </div>
   </div>
 </template>
