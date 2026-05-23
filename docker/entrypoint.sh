@@ -40,6 +40,13 @@ if [ "${SEED_ON_STARTUP:-false}" = "true" ]; then
     php artisan db:seed --force
 fi
 
-# ─── Start PHP-FPM ───────────────────────────────────────────────────────────
-echo "[entrypoint] Starting PHP-FPM..."
-exec php-fpm
+# ─── Start the requested process ─────────────────────────────────────────────
+# If docker-compose passes a CMD (e.g. "php artisan horizon"), exec it.
+# Otherwise default to php-fpm for the main app container.
+if [ $# -gt 0 ]; then
+    echo "[entrypoint] Executing CMD: $*"
+    exec "$@"
+else
+    echo "[entrypoint] Starting PHP-FPM (default)..."
+    exec php-fpm
+fi
