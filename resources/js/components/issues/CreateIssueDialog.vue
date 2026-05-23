@@ -2,7 +2,7 @@
 import { ref, watch, onMounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { getLocalTimeZone, today, type DateValue } from '@internationalized/date'
-import { CalendarIcon, PlusIcon, Loader2Icon } from '@lucide/vue'
+import { CalendarIcon, PlusIcon, Loader2Icon, SparklesIcon, WifiOffIcon } from '@lucide/vue'
 import { toDate } from 'reka-ui/date'
 import {
   Dialog,
@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Select,
   SelectContent,
@@ -32,6 +34,7 @@ import {
 } from '@/components/ui/popover'
 import { useCreateIssue } from '@/composables/useCreateIssue'
 import { useCategories } from '@/composables/useCategories'
+import { useTriageSuggest } from '@/composables/useTriageSuggest'
 import type { Issue, Priority } from '@/types'
 
 const props = defineProps<{
@@ -45,6 +48,7 @@ const emit = defineEmits<{
 
 const { form, errors, isSubmitting, isDirty, clearFieldError, resetForm, submit } = useCreateIssue()
 const { categories, isLoading: categoriesLoading, isCreating: categoryCreating, fetchCategories, createCategory } = useCategories()
+const { suggestion: triageSuggestion, isLoading: triageLoading, scheduleTriage, clearSuggestion } = useTriageSuggest()
 
 const newCategoryName = ref('')
 const showNewCategoryInput = ref(false)
@@ -69,6 +73,33 @@ watch(() => props.open, (isOpen) => {
   }
 })
 
+// Debounced triage: fires whenever title or description changes
+watch(
+  [() => form.value.title, () => form.value.description],
+  ([title, description]) => {
+    scheduleTriage(title, description)
+  },
+)
+
+function applySuggestion(field: 'priority' | 'category'): void {
+  if (!triageSuggestion.value) return
+  if (field === 'priority') {
+    form.value.priority = triageSuggestion.value.priority
+    clearFieldError('priority')
+  } else {
+    if (triageSuggestion.value.category_id !== null) {
+      form.value.category_id = triageSuggestion.value.category_id
+      clearFieldError('category_id')
+      showNewCategoryInput.value = false
+    }
+  }
+}
+
+function applyAllSuggestions(): void {
+  applySuggestion('priority')
+  applySuggestion('category')
+}
+
 function handleOpenChange(value: boolean): void {
   if (!value && isDirty.value) {
     const confirmed = window.confirm('You have unsaved changes. Are you sure you want to close?')
@@ -76,6 +107,7 @@ function handleOpenChange(value: boolean): void {
   }
   if (!value) {
     resetForm()
+    clearSuggestion()
     newCategoryName.value = ''
     showNewCategoryInput.value = false
   }
@@ -88,6 +120,7 @@ async function handleSubmit(): Promise<void> {
     toast.success('Issue created successfully')
     emit('created', issue)
     resetForm()
+    clearSuggestion()
     emit('update:open', false)
   }
 }
@@ -158,6 +191,65 @@ function fieldError(field: string): string | undefined {
           <p v-if="fieldError('description')" class="text-sm text-destructive">
             {{ fieldError('description') }}
           </p>
+        </div>
+
+        <!-- AI triage loading skeleton -->
+        <div v-if="triageLoading" class="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+          <SparklesIcon class="size-3.5 shrink-0 text-primary" />
+          <span class="text-xs text-muted-foreground">AI analyzing…</span>
+          <Skeleton class="ml-1 h-4 w-16 rounded" />
+          <Skeleton class="h-4 w-20 rounded" />
+        </div>
+
+        <!-- AI triage suggestion banner -->
+        <div
+          v-else-if="triageSuggestion"
+          class="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs"
+        >
+          <!-- Confidence icon -->
+          <SparklesIcon
+            v-if="triageSuggestion.confidence === 'ai'"
+            class="size-3.5 shrink-0 text-primary"
+          />
+          <WifiOffIcon
+            v-else
+            class="size-3.5 shrink-0 text-muted-foreground"
+          />
+
+          <span class="text-muted-foreground">
+            {{ triageSuggestion.confidence === 'ai' ? 'AI suggests:' : 'Basic suggests:' }}
+          </span>
+
+          <Badge
+            variant="secondary"
+            as="button"
+            type="button"
+            class="cursor-pointer capitalize"
+            @click="applySuggestion('priority')"
+          >
+            {{ triageSuggestion.priority }}
+          </Badge>
+
+          <Badge
+            v-if="triageSuggestion.category_id !== null"
+            variant="outline"
+            as="button"
+            type="button"
+            class="cursor-pointer capitalize"
+            @click="applySuggestion('category')"
+          >
+            {{ triageSuggestion.category_name }}
+          </Badge>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="ml-auto h-5 px-1.5 text-[10px]"
+            @click="applyAllSuggestions"
+          >
+            Apply all
+          </Button>
         </div>
 
         <!-- Priority & Category row -->
