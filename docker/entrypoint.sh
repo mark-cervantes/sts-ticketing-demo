@@ -16,6 +16,9 @@ echo "[entrypoint] Running migrations..."
 php artisan migrate --force
 
 # ─── Laravel caches ──────────────────────────────────────────────────────────
+# Config cache reads env at cache time — only cache if .env exists in container.
+# When using docker-compose env_file, env vars are already in the environment,
+# so config:cache bakes the correct values from the running environment.
 echo "[entrypoint] Caching config, routes..."
 php artisan config:cache
 php artisan route:cache
