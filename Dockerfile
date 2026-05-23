@@ -24,7 +24,8 @@ RUN composer install \
     --no-progress \
     --optimize-autoloader \
     --prefer-dist \
-    --ignore-platform-req=ext-pcntl
+    --ignore-platform-req=ext-pcntl \
+    --no-scripts
 
 # ─── Stage 3: Final — PHP 8.4-FPM production image ──────────────────────────
 FROM php:8.4-fpm-alpine AS final
