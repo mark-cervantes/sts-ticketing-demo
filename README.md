@@ -8,6 +8,46 @@ Inertia + Vue 3 + PostgreSQL + Redis + Horizon, fully containerized via
 
 ---
 
+## Key Features
+
+- **Kanban dashboard** — drag-and-drop issue cards between status columns; all CRUD via modals, no page reloads
+- **Async AI summary pipeline** — 3-tier fallback: Ollama Cloud → OpenRouter → rules-based engine (SPEC §5, ADR-002)
+- **SSE real-time updates** — every open browser tab receives live issue changes via Server-Sent Events without polling
+- **Google Docs-style sharing** — ladderized `view → comment → edit` permissions per issue, independent of visibility (ADR-007)
+- **Optimistic locking** — `lock_version` on the issues model prevents lost-update conflicts on concurrent edits
+- **Deadline + needs_attention auto-flagging** — computed automatically from priority (high/critical) or deadline proximity (ADR-005)
+
+---
+
+## Project Overview
+
+This project is a **single-user-multi-issue intake tracker** for support and operations teams. Users log issues, attach priorities and deadlines, and the system automatically generates a plain-English summary of each issue using a multi-driver AI pipeline. Issues are managed on a Kanban board and can be shared granularly with teammates.
+
+**What makes it interesting architecturally:**
+- The AI pipeline uses the Laravel Manager/Strategy pattern for pluggable, testable LLM drivers — the same pattern Laravel uses for queues, caches, and mail
+- Real-time updates use native PHP SSE (no WebSocket server, no pusher dependency)
+- The entire stack runs in Docker via Sail with a single `make dev` command
+
+---
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Laravel 13 (PHP 8.4) |
+| Frontend | Inertia.js + Vue 3 + TypeScript |
+| UI Kit | shadcn-vue + Tailwind CSS v4 |
+| Database | PostgreSQL 18 |
+| Queue | Redis + Laravel Horizon |
+| AI | Ollama Cloud (primary), OpenRouter (backup), rules-based fallback |
+| Real-time | SSE (Server-Sent Events) |
+| Auth | Laravel Breeze, session-based |
+| Testing | PHPUnit 12 — 283 tests, 649 assertions |
+| Drag & Drop | vue-draggable-plus |
+| Container | Laravel Sail (Docker Compose) |
+
+---
+
 ## TL;DR — Daily Workflow
 
 ```bash
@@ -38,46 +78,48 @@ host. Always use `make <target>` or `./vendor/bin/sail <command>`.
 
 ---
 
-## Architecture (high level)
+## Architecture Overview
 
+The request flow, service layer, async pipeline, and SSE channel in one diagram:
+
+```mermaid
+graph TD
+    Browser["Browser (Vue SPA)"]
+    Inertia["Inertia Middleware"]
+    Controller["Controller\n(thin — delegates only)"]
+    FormRequest["Form Request\n(all validation)"]
+    Policy["Policy\n(all authorization)"]
+    Service["IssueService / ShareService\n(business logic)"]
+    Model["Eloquent Model\n(Issue, Comment, Share)"]
+    DB[(PostgreSQL)]
+    Redis[(Redis)]
+
+    Browser -->|HTTP / Inertia| Inertia
+    Inertia --> FormRequest
+    FormRequest --> Policy
+    Policy --> Controller
+    Controller --> Service
+    Service --> Model
+    Model --> DB
+
+    QueueWorker["Queue Worker\n(Horizon)"]
+    Job["GenerateSummaryJob"]
+    Manager["SummaryManager\n(Laravel Manager pattern)"]
+    LlmDriver["LlmDriver\n(Ollama Cloud / OpenRouter)"]
+    RulesDriver["RulesDriver\n(deterministic fallback)"]
+
+    Service -->|dispatch| Redis
+    Redis --> QueueWorker
+    QueueWorker --> Job
+    Job --> Manager
+    Manager --> LlmDriver
+    Manager --> RulesDriver
+    Job -->|update summary_status| Model
+
+    SSE["IssueSseController\n(chunked SSE stream)"]
+    DB -->|Eloquent events| SSE
+    SSE -->|text/event-stream| Browser
 ```
-┌─────────────┐     HTTPS      ┌──────────────────┐
-│   Browser   │ ◄────────────► │   Sail (nginx)   │
-│  (Vue SPA)  │                │   :80            │
-└─────────────┘                └────────┬─────────┘
-                                        │
-                               ┌────────▼─────────┐
-                               │   Laravel App    │  ◄── make up
-                               │   (PHP 8.4)      │
-                               │   Inertia SSR    │
-                               ├──────────────────┤
-                               │   Vite :5175     │  ◄── make vite
-                               │   (HMR)          │
-                               ├──────────────────┤
-                               │   Queue Worker   │  ◄── make queue
-                               │   (jobs)         │
-                               └──┬───────────┬───┘
-                                  │           │
-                          ┌───────▼──┐   ┌────▼─────┐
-                          │ Postgres │   │  Redis   │
-                          │  :5434   │   │  :6379   │
-                          └──────────┘   └──────────┘
-```
-
-### Stack
-
-| Layer | Choice |
-|---|---|
-| Backend | Laravel 13 (PHP 8.4) |
-| Frontend | Inertia.js + Vue 3 + TypeScript |
-| UI Kit | shadcn-vue + Tailwind CSS v4 |
-| Database | PostgreSQL 18 |
-| Queue | Redis + Horizon |
-| AI | Ollama Cloud (primary), OpenRouter (backup), rules-based fallback |
-| Real-time | SSE (Server-Sent Events) |
-| Auth | Laravel Breeze, session-based |
-| Testing | **PHPUnit 12** (not Pest, despite SPEC §2) |
-| Drag & Drop | vue-draggable-plus |
 
 ### Ports (on the host)
 
@@ -87,6 +129,33 @@ host. Always use `make <target>` or `./vendor/bin/sail <command>`.
 | Vite (HMR) | **5175** | Background; you don't visit this directly |
 | PostgreSQL | **5434** | mapped from container's 5432; override via `FORWARD_DB_PORT` |
 | Redis | **6379** | |
+
+---
+
+## AI Summary Pipeline
+
+The AI pipeline uses the **Laravel Manager + Strategy** pattern. `SummaryManager` resolves a driver from config and calls a common `SummaryGeneratorInterface`. Failure at any level falls through to the next:
+
+```mermaid
+graph LR
+    Facade["Summary facade\n(app code entry point)"]
+    Manager["SummaryManager\nextends Illuminate\\Support\\Manager"]
+    Llm["LlmDriver\nOllama Cloud primary"]
+    ORouter["LlmDriver\nOpenRouter endpoint"]
+    Rules["RulesDriver\ndeterministic — never fails"]
+
+    Facade --> Manager
+    Manager --> Llm
+    Llm -->|HTTP error / timeout| ORouter
+    ORouter -->|HTTP error / timeout| Rules
+    Rules -->|always succeeds| Manager
+
+    Manager -->|summary_status = ready| Done["Issue updated"]
+```
+
+**Driver resolution** is config-driven (`config/summary.php`). The `LlmDriver` itself supports multiple endpoint URLs — Ollama Cloud and OpenRouter are configured as primary/backup within the same driver class. `RulesDriver` is the final catch-all and never throws.
+
+See **ADR-002** for the full rationale.
 
 ---
 
@@ -165,7 +234,39 @@ make fresh    # drops all tables, re-migrates, re-seeds — destructive
 This is safe to run repeatedly. `make fresh` runs inside a DB transaction,
 so a failed seed leaves the DB intact.
 
-### Running the tests
+---
+
+## API Endpoints
+
+All application routes are under `/api/`. Auth and profile routes are standard Laravel Breeze and excluded below.
+
+| Method | URI | Route Name | Controller |
+|---|---|---|---|
+| GET | `/api/categories` | `categories.index` | `CategoryController@index` |
+| POST | `/api/categories` | `categories.store` | `CategoryController@store` |
+| DELETE | `/api/categories/{category}` | `categories.destroy` | `CategoryController@destroy` |
+| GET | `/api/issues` | `issues.index` | `IssueController@index` |
+| POST | `/api/issues` | `issues.store` | `IssueController@store` |
+| GET | `/api/issues/{issue}` | `issues.show` | `IssueController@show` |
+| PUT/PATCH | `/api/issues/{issue}` | `issues.update` | `IssueController@update` |
+| DELETE | `/api/issues/{issue}` | `issues.destroy` | `IssueController@destroy` |
+| POST | `/api/issues/{issue}/comments` | — | `CommentController@store` |
+| GET | `/api/issues/{issue}/shares` | `issues.shares.index` | `ShareController@index` |
+| POST | `/api/issues/{issue}/shares` | `issues.shares.store` | `ShareController@store` |
+| GET | `/api/issues/{issue}/stream` | — | `IssueSseController` (SSE) |
+| GET | `/api/shares/{share}` | `shares.show` | `ShareController@show` |
+| PUT/PATCH | `/api/shares/{share}` | `shares.update` | `ShareController@update` |
+| DELETE | `/api/shares/{share}` | `shares.destroy` | `ShareController@destroy` |
+
+All write endpoints require authentication and pass through a `Policy` before reaching the controller. Validation lives in a `FormRequest` class per endpoint — never inline in the controller.
+
+The SSE endpoint (`/api/issues/{issue}/stream`) returns `Content-Type: text/event-stream` and streams real-time updates to the browser as long as the connection stays open.
+
+---
+
+## Testing
+
+### Running the suite
 
 ```bash
 make test                                  # full PHPUnit 12 suite
@@ -176,16 +277,15 @@ make test-filter FILTER=test_status_change # one method (substring)
 Tests use `RefreshDatabase`, so they don't touch the seeded demo data —
 you can run tests and keep using the live app at http://localhost.
 
-### Watching what's happening
+### What's covered
 
-```bash
-make logs       # tails vite + queue logs (Ctrl-C to exit)
-make status     # one-shot health check (containers, vite, queue, HTTP)
-```
+**283 tests, 649 assertions** across three layers (PHPUnit 12, not Pest):
 
-The queue log is the most informative for debugging async behavior —
-`GenerateSummaryJob` runs there and any AI driver errors surface as
-job failures.
+| Layer | Count | What it tests |
+|---|---|---|
+| Integration | ~35 | Cross-layer regression: a request travels through FormRequest → Policy → Controller → Service → Model and verifies the DB state |
+| Feature | ~45 | HTTP endpoint behavior, validation errors, auth gates, status codes |
+| Unit | ~20 | Isolated logic: SummaryManager driver resolution, RulesDriver output, `needs_attention` computation, lock_version conflict detection |
 
 ### Common scenarios to try after the first tour
 
@@ -201,6 +301,70 @@ job failures.
 
 ---
 
+## Design Decisions (ADRs)
+
+Ten Architecture Decision Records live in [`vault/docs/adr/`](vault/docs/adr/). Each is a short Markdown file with Status, Context, Decision, and Rationale.
+
+| ADR | Title | Decision |
+|---|---|---|
+| [ADR-001](vault/docs/adr/001-stack-selection.md) | Stack Selection | Laravel 13 + Inertia + Vue 3 + TypeScript + shadcn-vue + Tailwind CSS v4 + PostgreSQL + Redis |
+| [ADR-002](vault/docs/adr/002-ai-architecture.md) | AI / Summary Generation Architecture | Laravel Manager + Strategy pattern; two drivers (`LlmDriver`, `RulesDriver`) behind a single `SummaryGeneratorInterface`; 3-tier fallback |
+| [ADR-003](vault/docs/adr/003-dashboard-first-kanban.md) | Dashboard-First Kanban UI | The dashboard IS the app — Kanban columns = statuses, all CRUD via modals/drag-and-drop, no separate list view |
+| [ADR-004](vault/docs/adr/004-auth-model.md) | Authentication Model | Free-tier SaaS model — no roles, per-issue ownership + sharing; ladderized `view → comment → edit` permissions |
+| [ADR-005](vault/docs/adr/005-priority-vs-deadline.md) | Priority and Deadline as Independent Dimensions | `priority` and `deadline_at` are orthogonal fields; `needs_attention` computed from either (high/critical OR within 48h of deadline) |
+| [ADR-006](vault/docs/adr/006-category-model.md) | Dynamic DB-Backed Categories | DB-backed `categories` table with seeded defaults and inline creation; not an enum |
+| [ADR-007](vault/docs/adr/007-sharing-and-visibility.md) | Issue Sharing & Visibility Model | Binary `visibility` (private/public) + explicit permission grants via `shares` table; sharing works the same on both visibility levels |
+| [ADR-008](vault/docs/adr/008-docker-deployment.md) | Docker Compose Deployment Strategy | Simple Docker Compose with generic images and source-mounted volumes; no custom Dockerfile builds; Caddy as reverse proxy |
+| [ADR-009](vault/docs/adr/009-testing-strategy.md) | Integration-First Testing Strategy | Integration tests are the primary regression firewall; feature tests cover endpoints; unit tests cover isolated logic |
+| [ADR-010](vault/docs/adr/010-sprint-workflow.md) | Sprint-as-Deployable-Unit Workflow | Sprint = logical deployable capability (not time-box); tasks numbered `XX.XX.XX`; filesystem sort is execution order |
+
+---
+
+## Deployment
+
+Production deployment uses `docker-compose.prod.yml` with Caddy as the reverse proxy and SSL termination. See **ADR-008** for the full rationale.
+
+### Quick production deploy
+
+```bash
+# On the target host (192.168.254.140 or equivalent)
+git clone <repo> ticketing-system
+cd ticketing-system
+cp .env.example .env.prod
+# Edit .env.prod: set APP_KEY, DB_PASSWORD, OLLAMA_URL, OPENROUTER_API_KEY, etc.
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml exec app php artisan migrate --force
+docker compose -f docker-compose.prod.yml exec app php artisan db:seed --force
+```
+
+### Production services
+
+| Service | Image | Purpose |
+|---|---|---|
+| `app` | Generic PHP 8.4 + Node | Laravel app + Vite build |
+| `horizon` | Same as app | Queue worker (Horizon) |
+| `scheduler` | Same as app | `schedule:run` loop |
+| `postgres` | postgres:16-alpine | Database |
+| `redis` | redis:7-alpine | Queue + cache |
+| `caddy` | caddy:2-alpine | Reverse proxy + automatic TLS |
+
+> **Note:** `make` targets are for the Sail dev environment only. Use `docker compose -f docker-compose.prod.yml exec app php artisan ...` for production operations.
+
+---
+
+## Screenshots
+
+> *(Task 05.04 handles final screenshot capture and verification. Placeholder paths are reserved below.)*
+
+| Screen | Path |
+|---|---|
+| Kanban dashboard — light mode | `docs/screenshots/dashboard-light.png` |
+| Kanban dashboard — dark mode | `docs/screenshots/dashboard-dark.png` |
+| Issue detail modal | `docs/screenshots/issue-detail.png` |
+| Share dialog | `docs/screenshots/share-dialog.png` |
+
+---
+
 ## Project Layout
 
 ```
@@ -210,7 +374,8 @@ job failures.
 │   ├── Http/                  # Controllers, Form Requests, Middleware
 │   ├── Models/                # Eloquent models
 │   ├── Policies/              # Authorization (ladderized SPEC §3.2)
-│   ├── Services/              # Business logic, including Ai/ drivers
+│   ├── Services/              # Business logic, including Summary/ drivers
+│   │   └── Summary/           # SummaryManager, LlmDriver, RulesDriver
 │   └── Jobs/                  # Async work (GenerateSummaryJob)
 ├── resources/
 │   ├── js/                    # Vue + Inertia (coder-frontend's domain)
@@ -227,6 +392,7 @@ job failures.
 ├── tests/                     # PHPUnit 12 (QA agent's domain)
 │   ├── Feature/               # Integration + HTTP tests
 │   └── Unit/                  # Pure logic
+├── docker-compose.prod.yml    # Production deployment (ADR-008)
 ├── vault/                     # Living docs (single source of truth)
 │   ├── SPEC.md                # What to build
 │   ├── docs/SRS.md            # How to build it (scenarios I-XX)
@@ -317,6 +483,6 @@ make shell                              # bash inside the container
 
 - **`vault/SPEC.md`** — product specification
 - **`vault/docs/SRS.md`** — software requirements with scenarios
-- **`vault/docs/adr/`** — architecture decision records
+- **`vault/docs/adr/`** — architecture decision records (10 ADRs)
 - **`vault/sprint/PLAN.md`** — current sprint state
 - **`AGENTS.md`** — conventions for AI agents (and humans)
