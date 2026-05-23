@@ -63,6 +63,7 @@
 /* ⑥ Light mode token values — THE ONLY PLACE actual color values live */
 /* To change primary color: edit --primary here. One place. Done. */
 :root {
+  --sidebar-width: 16rem;
   --radius: 0.5rem;
   --background:             oklch(1 0 0);
   --foreground:             oklch(0.145 0 0);
