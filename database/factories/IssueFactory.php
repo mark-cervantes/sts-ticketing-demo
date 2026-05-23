@@ -9,6 +9,7 @@ use App\Enums\Visibility;
 use App\Models\Category;
 use App\Models\Issue;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -42,6 +43,26 @@ class IssueFactory extends Factory
         [
             'summary' => 'Users on mobile devices cannot attach files larger than 5MB to issues despite the documented limit being 20MB. The upload form silently fails without an error message, leaving users confused.',
             'action' => 'Increase the mobile file upload timeout and display a progress indicator with clear error feedback when limits are exceeded.',
+        ],
+        [
+            'summary' => 'The data export feature exposes personally identifiable information including full names, email addresses, and IP addresses in unencrypted plain text CSV files. This likely violates GDPR requirements for EU customers.',
+            'action' => 'Apply immediate field redaction to the export endpoint and introduce an optional password-protected encrypted export for compliance teams.',
+        ],
+        [
+            'summary' => 'Users report that dark mode preference resets to light mode on every new browser session. The current implementation stores the preference in Vue component state only, with no persistence to localStorage or the database.',
+            'action' => 'Persist the theme preference to a JSON preferences column on the users table and sync it on login so the setting follows the user across devices.',
+        ],
+        [
+            'summary' => 'Application response times degrade significantly for accounts with 1000+ open issues due to the issues list returning all records in a single unbounded query. Payloads exceeding 2MB have been observed in production.',
+            'action' => 'Implement cursor-based pagination on the issues index endpoint with a default page size of 25 and expose pagination metadata in the API response.',
+        ],
+        [
+            'summary' => 'The API is missing standard rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset) on all responses. Partner integrations cannot implement adaptive back-off strategies without this information.',
+            'action' => 'Wrap the existing throttle middleware with a custom RateLimitHeaders middleware that appends the three standard headers to every API response.',
+        ],
+        [
+            'summary' => 'An accessibility audit found that the dashboard priority pie chart and trend line chart lack alt text, causing screen readers to announce them as unlabeled images. This constitutes a WCAG 2.1 Level A violation.',
+            'action' => 'Add descriptive alt text to all chart components summarising the key data insight each chart conveys, and re-run the axe scanner to confirm the violations are cleared.',
         ],
     ];
 
@@ -167,7 +188,7 @@ class IssueFactory extends Factory
      * Pass an explicit Carbon instance, or let it default to a random time
      * within the next 15-180 minutes (within the attention threshold).
      */
-    public function withDeadline(?\Carbon\Carbon $deadline = null): static
+    public function withDeadline(?Carbon $deadline = null): static
     {
         return $this->state(fn (array $attributes) => [
             'deadline_at' => $deadline ?? now()->addMinutes(fake()->numberBetween(15, 180)),
