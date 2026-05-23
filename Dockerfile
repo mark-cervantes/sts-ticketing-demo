@@ -113,6 +113,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 
 EXPOSE 9000
 
-USER www-data
-
+# Entrypoint runs as root for migrations/cache, then FPM drops to www-data via pool config
 ENTRYPOINT ["/entrypoint.sh"]

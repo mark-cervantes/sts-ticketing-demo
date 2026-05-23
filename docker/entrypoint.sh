@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ─── Ensure storage dirs exist ───────────────────────────────────────────────
+mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache
+
 # ─── Wait for Postgres ────────────────────────────────────────────────────────
 echo "[entrypoint] Waiting for Postgres at ${DB_HOST:-postgres}:${DB_PORT:-5432}..."
 until pg_isready -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USERNAME:-sail}" -q; do
@@ -13,10 +16,11 @@ echo "[entrypoint] Running migrations..."
 php artisan migrate --force
 
 # ─── Laravel caches ──────────────────────────────────────────────────────────
-echo "[entrypoint] Caching config, routes, views..."
+echo "[entrypoint] Caching config, routes..."
 php artisan config:cache
 php artisan route:cache
-php artisan view:cache
+# view:cache is optional — skip if views path not found (Inertia uses Vue, not Blade)
+php artisan view:cache 2>/dev/null || echo "[entrypoint] view:cache skipped (no Blade views to cache)"
 
 # ─── Optional seed ───────────────────────────────────────────────────────────
 if [ "${SEED_ON_STARTUP:-false}" = "true" ]; then
