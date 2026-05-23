@@ -51,7 +51,11 @@ import {
   SparklesIcon,
   CalendarIcon,
   AlertCircleIcon,
+  ArrowRightIcon,
+  RefreshCwIcon,
 } from '@lucide/vue'
+import { apiPost } from '@/composables/useApiFetch'
+import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
 import {
   Popover,
@@ -281,6 +285,32 @@ async function handleDelete(): Promise<void> {
   if (success) {
     deleteDialogOpen.value = false
     emit('update:open', false)
+  }
+}
+
+// --- AI Summary regeneration ---
+
+const regenerating = ref(false)
+
+async function handleRegenerate(): Promise<void> {
+  if (!issue.value || regenerating.value) return
+  regenerating.value = true
+
+  try {
+    const response = await apiPost(`/api/issues/${issue.value.id}/regenerate-summary`, {})
+
+    if (response.ok || response.status === 202) {
+      // Re-fetch the issue: backend will have reset summary_status to 'pending'
+      // which re-enables SSE streaming to pick up the new summary.
+      await fetchIssue(issue.value.id)
+      toast.success('Regenerating AI summary…')
+    } else {
+      toast.error('Failed to regenerate summary')
+    }
+  } catch {
+    toast.error('Network error')
+  } finally {
+    regenerating.value = false
   }
 }
 </script>
@@ -522,25 +552,60 @@ async function handleDelete(): Promise<void> {
 
         <!-- AI Summary section -->
         <div class="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
-          <div class="flex items-center gap-2 text-sm font-medium text-foreground">
-            <SparklesIcon class="size-4" />
-            AI Summary
+          <!-- Header: label + regenerate button -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+              <SparklesIcon class="size-4 text-primary" />
+              AI Summary
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                v-if="summaryState === 'ready'"
+                class="text-[10px] text-muted-foreground/60"
+              >
+                Powered by AI
+              </span>
+              <Button
+                v-if="summaryState === 'ready'"
+                variant="ghost"
+                size="sm"
+                class="h-6 px-2 text-xs"
+                :disabled="regenerating"
+                @click="handleRegenerate"
+              >
+                <RefreshCwIcon v-if="!regenerating" class="mr-1 size-3" />
+                <Loader2Icon v-else class="mr-1 size-3 animate-spin" />
+                {{ regenerating ? 'Regenerating…' : 'Regenerate' }}
+              </Button>
+            </div>
           </div>
 
           <!-- Ready -->
           <template v-if="summaryState === 'ready'">
-            <p class="text-sm leading-relaxed text-foreground">
-              {{ issue.summary }}
-            </p>
-            <div
-              v-if="issue.suggested_next_action"
-              class="mt-2 rounded-md border border-border bg-background px-3 py-2"
-            >
-              <p class="text-xs font-medium text-muted-foreground">Suggested next action</p>
-              <p class="mt-0.5 text-sm text-foreground">
-                {{ issue.suggested_next_action }}
-              </p>
-            </div>
+            <Transition name="summary-reveal">
+              <div :key="issue.summary ?? 'empty'">
+                <p class="text-sm leading-relaxed text-foreground">
+                  {{ issue.summary }}
+                </p>
+                <!-- Suggested action banner -->
+                <div
+                  v-if="issue.suggested_next_action"
+                  class="mt-2 flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 dark:bg-primary/10"
+                >
+                  <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                    <ArrowRightIcon class="size-4 text-primary" />
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-primary">
+                      Suggested Next Action
+                    </p>
+                    <p class="mt-0.5 text-sm text-foreground">
+                      {{ issue.suggested_next_action }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </Transition>
           </template>
 
           <!-- Processing / Pending -->
@@ -627,3 +692,14 @@ async function handleDelete(): Promise<void> {
     </SheetContent>
   </Sheet>
 </template>
+
+<style scoped>
+.summary-reveal-enter-active {
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.summary-reveal-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+  filter: blur(4px);
+}
+</style>
