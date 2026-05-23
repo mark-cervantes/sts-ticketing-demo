@@ -26,6 +26,25 @@ const localIssues = ref([...props.column.issues])
 watch(() => props.column.issues, (newIssues) => {
   localIssues.value = [...newIssues]
 }, { deep: true })
+
+/**
+ * SortableJS `end` event fires on the source list after every drag operation.
+ * `evt.from` is the source list element, `evt.to` is the destination list element.
+ * Both carry `data-status` attributes set on the VueDraggable element.
+ * `evt.item` is the dragged card wrapper div, which carries `data-issue-id`.
+ */
+function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElement }): void {
+  const fromStatus = evt.from.dataset.status as IssueStatus | undefined
+  const toStatus = evt.to.dataset.status as IssueStatus | undefined
+
+  // Same-column reorder — nothing to persist
+  if (!fromStatus || !toStatus || fromStatus === toStatus) return
+
+  const issueId = Number(evt.item.dataset.issueId)
+  if (!issueId || isNaN(issueId)) return
+
+  emit('moveIssue', issueId, fromStatus, toStatus)
+}
 </script>
 
 <template>
@@ -60,6 +79,7 @@ watch(() => props.column.issues, (newIssues) => {
       class="flex-1 space-y-2 overflow-y-auto px-2 pb-2"
       :class="column.issues.length === 0 ? 'min-h-[120px]' : ''"
       :data-status="column.status"
+      @end="handleDragEnd"
     >
       <div
         v-for="issue in localIssues"

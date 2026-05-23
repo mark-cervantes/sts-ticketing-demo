@@ -9,7 +9,6 @@ import IssueDetailSheet from '@/components/issues/IssueDetailSheet.vue'
 const { columns, initialLoading, loadInitial, loadMore, moveIssue } = useKanbanBoard()
 const { getIssueQueryParam } = useIssueDetail()
 
-const dragFromStatus = ref<IssueStatus | null>(null)
 const sheetOpen = ref(false)
 const selectedIssueId = ref<number | null>(null)
 
@@ -40,46 +39,13 @@ function handleSheetOpenChange(value: boolean): void {
   }
 }
 
-/**
- * Global drag-start: capture the issue's original status so we can
- * detect cross-column moves even when vue-draggable-plus fires the
- * end event on the target list.
- */
-function handleDragStart(evt: DragEvent): void {
-  const target = evt.target as HTMLElement | null
-  const wrapper = target?.closest('[data-from-status]') as HTMLElement | null
-  if (wrapper?.dataset.fromStatus) {
-    dragFromStatus.value = wrapper.dataset.fromStatus as IssueStatus
-  }
-}
-
-function handleDragEnd(evt: DragEvent): void {
-  const target = evt.target as HTMLElement | null
-  const wrapper = target?.closest('[data-issue-id]') as HTMLElement | null
-  if (!wrapper) return
-
-  const issueId = Number(wrapper.dataset.issueId)
-  if (!issueId || isNaN(issueId)) return
-
-  // Determine which column the card was dropped into
-  const columnEl = wrapper.closest('[data-status]') as HTMLElement | null
-  const toStatus = columnEl?.dataset.status as IssueStatus | undefined
-  if (!toStatus) return
-
-  const fromStatus = dragFromStatus.value
-  if (!fromStatus || fromStatus === toStatus) return
-
+function handleMoveIssue(issueId: number, fromStatus: IssueStatus, toStatus: IssueStatus): void {
   void moveIssue(issueId, fromStatus, toStatus)
-  dragFromStatus.value = null
 }
 </script>
 
 <template>
-  <div
-    class="flex flex-col gap-4 p-4 md:flex-row md:gap-4 md:overflow-x-auto"
-    @dragstart="handleDragStart"
-    @dragend="handleDragEnd"
-  >
+  <div class="flex flex-col gap-4 p-4 md:flex-row md:gap-4 md:overflow-x-auto">
     <KanbanColumn
       v-for="col in columns"
       :key="col.status"
@@ -87,6 +53,7 @@ function handleDragEnd(evt: DragEvent): void {
       :skeleton-loading="initialLoading"
       @load-more="handleLoadMore"
       @select-issue="handleSelectIssue"
+      @move-issue="handleMoveIssue"
     />
 
     <!-- If no columns visible (all statuses filtered out) -->
