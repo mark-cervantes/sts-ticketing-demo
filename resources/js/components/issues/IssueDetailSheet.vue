@@ -4,6 +4,7 @@ import type { Issue, IssueStatus, IssuePriority, IssueVisibility } from '@/types
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
 import { useIssueDetail } from '@/composables/useIssueDetail'
 import { useCategories } from '@/composables/useCategories'
+import { useSummaryStream } from '@/composables/useSummaryStream'
 import {
   Sheet,
   SheetContent,
@@ -95,6 +96,24 @@ const localDescription = ref('')
 
 const todayDate = today(getLocalTimeZone())
 
+// Reactive refs for SSE composable inputs
+const streamIssueId = computed(() => (props.open ? props.issueId : null))
+const streamEnabled = computed(
+  () =>
+    props.open &&
+    props.issueId !== null &&
+    (issue.value?.summary_status === 'processing' || issue.value?.summary_status === 'pending'),
+)
+
+// Open SSE stream when issue is processing; re-fetch on terminal event.
+useSummaryStream(streamIssueId, streamEnabled, (_payload) => {
+  // Re-fetch the issue to get the authoritative state from the API.
+  // This ensures the UI reflects the full updated record.
+  if (props.issueId !== null) {
+    void fetchIssue(props.issueId)
+  }
+})
+
 // Priority options for select
 const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: 'critical', label: 'Critical' },
@@ -111,10 +130,10 @@ const statusOptions: { value: IssueStatus; label: string }[] = [
 ]
 
 // Summary section computed state
-const summaryState = computed<'completed' | 'processing' | 'failed'>(() => {
+const summaryState = computed<'ready' | 'processing' | 'failed'>(() => {
   if (!issue.value) return 'processing'
   const status = issue.value.summary_status
-  if (status === 'completed') return 'completed'
+  if (status === 'ready') return 'ready'
   if (status === 'failed') return 'failed'
   return 'processing' // pending or processing
 })
@@ -483,8 +502,8 @@ async function handleDelete(): Promise<void> {
             AI Summary
           </div>
 
-          <!-- Completed -->
-          <template v-if="summaryState === 'completed'">
+          <!-- Ready -->
+          <template v-if="summaryState === 'ready'">
             <p class="text-sm leading-relaxed text-foreground">
               {{ issue.summary }}
             </p>
