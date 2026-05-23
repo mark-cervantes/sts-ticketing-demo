@@ -42,9 +42,11 @@ This project is a **single-user-multi-issue intake tracker** for support and ope
 | AI | Ollama Cloud (primary), OpenRouter (backup), rules-based fallback |
 | Real-time | SSE (Server-Sent Events) |
 | Auth | Laravel Breeze, session-based |
-| Testing | PHPUnit 12 — 283 tests, 649 assertions |
+| Testing | PHPUnit 12 — 346 tests, 814 assertions |
 | Drag & Drop | vue-draggable-plus |
 | Container | Laravel Sail (Docker Compose) |
+
+**Why PostgreSQL?** — Laravel ships with SQLite support, but PostgreSQL provides native enum validation, robust JSON operators for future extensibility, and advisory locks that Horizon uses for job coordination. It also matches production (identical engine in dev and deploy), avoiding type-coercion surprises across environments.
 
 ---
 
@@ -120,6 +122,15 @@ graph TD
     DB -->|Eloquent events| SSE
     SSE -->|text/event-stream| Browser
 ```
+
+### How `needs_attention` is computed
+
+The flag is maintained by two independent mechanisms that work together:
+
+- **On every save** — the `Issue::saving` model event fires before any insert or update. It sets `needs_attention = true` when `priority` is `high` or `critical`, OR when `deadline_at` is within 48 hours of now. Otherwise it sets the flag to `false`. This means the flag is always correct immediately after any write.
+- **On schedule** — the `issues:flag-attention` Artisan command runs **hourly** via Laravel's scheduler. It re-evaluates all open/in-progress issues against the 48-hour deadline window, catching issues that drift into the urgency window over time without any explicit save (e.g., an issue created a week ago with a deadline that's now imminent).
+
+Together these two paths ensure `needs_attention` is never stale by more than one hour, regardless of write activity.
 
 ### Ports (on the host)
 
@@ -262,6 +273,52 @@ All write endpoints require authentication and pass through a `Policy` before re
 
 The SSE endpoint (`/api/issues/{issue}/stream`) returns `Content-Type: text/event-stream` and streams real-time updates to the browser as long as the connection stays open.
 
+### Example requests
+
+Auth is **session-based** — log in via the browser at `http://localhost/login` (or `POST /login`) first, then copy the `laravel_session` cookie value from DevTools.
+
+**Create issue**
+```bash
+curl -s -X POST http://localhost/api/issues \
+  --cookie "laravel_session=..." \
+  -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: ..." \
+  -d '{"title":"Payment gateway timeout","description":"Checkout fails intermittently","priority":"high","category_id":1,"status":"open"}'
+```
+
+**List issues with filters**
+```bash
+curl -s "http://localhost/api/issues?status=open&priority=high" \
+  --cookie "laravel_session=..."
+```
+
+**View one issue with comments**
+```bash
+curl -s "http://localhost/api/issues/1" \
+  --cookie "laravel_session=..."
+```
+
+**Partial update (status change)**
+```bash
+curl -s -X PATCH http://localhost/api/issues/1 \
+  --cookie "laravel_session=..." \
+  -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: ..." \
+  -d '{"status":"in_progress"}'
+```
+
+**Add a comment**
+```bash
+curl -s -X POST http://localhost/api/issues/1/comments \
+  --cookie "laravel_session=..." \
+  -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: ..." \
+  -d '{"body":"Reproduced on staging. Escalating."}'
+```
+
+> **Tip:** fetch the XSRF token from the `XSRF-TOKEN` cookie (URL-decoded) or from
+> `GET /sanctum/csrf-cookie`. Postman handles this automatically via the cookie jar.
+
 ---
 
 ## Testing
@@ -279,7 +336,7 @@ you can run tests and keep using the live app at http://localhost.
 
 ### What's covered
 
-**283 tests, 649 assertions** across three layers (PHPUnit 12, not Pest):
+**346 tests, 814 assertions** across three layers (PHPUnit 12, not Pest):
 
 | Layer | Count | What it tests |
 |---|---|---|
@@ -317,6 +374,12 @@ Ten Architecture Decision Records live in [`vault/docs/adr/`](vault/docs/adr/). 
 | [ADR-008](vault/docs/adr/008-docker-deployment.md) | Docker Compose Deployment Strategy | Simple Docker Compose with generic images and source-mounted volumes; no custom Dockerfile builds; Caddy as reverse proxy |
 | [ADR-009](vault/docs/adr/009-testing-strategy.md) | Integration-First Testing Strategy | Integration tests are the primary regression firewall; feature tests cover endpoints; unit tests cover isolated logic |
 | [ADR-010](vault/docs/adr/010-sprint-workflow.md) | Sprint-as-Deployable-Unit Workflow | Sprint = logical deployable capability (not time-box); tasks numbered `XX.XX.XX`; filesystem sort is execution order |
+
+### Deviations from Spec
+
+**`critical` priority extension** — The spec defines three priority levels (`low`, `medium`, `high`). We added `critical` as a fourth level to support real-world triage workflows where "high" alone is insufficient. The `needs_attention` flag treats both `high` and `critical` as attention-worthy. All three spec-defined values are accepted; `critical` is an additive extension.
+
+**`user_id` FK instead of `author_name` string** — The spec defines `author_name` as a free-text string on comments. We use a `user_id` foreign key instead, linking comments to authenticated users. This provides referential integrity, prevents orphaned or misattributed comments, and enables permission checks (e.g., "can this user comment on this issue?"). The API response includes `user.name` in each comment object, so the JSON shape is functionally equivalent.
 
 ---
 
@@ -384,6 +447,16 @@ sudo caddy reload --config /etc/caddy/Caddyfile
 | Kanban dashboard — dark mode | `docs/screenshots/dashboard-dark.png` |
 | Issue detail modal | `docs/screenshots/issue-detail.png` |
 | Share dialog | `docs/screenshots/share-dialog.png` |
+
+---
+
+## AI Usage
+
+**Tools:** Claude (via the OpenCode agent system) with four project-specific agents: `tech-lead`, `qa`, `coder-backend`, and `coder-frontend`.
+
+**What it was used for:** project scaffolding, the Laravel Manager/Strategy driver pattern for the AI pipeline, test writing (PHPUnit feature + integration + unit), deployment automation (Caddy, Docker Compose prod stack), and README/ADR drafting.
+
+**What was reviewed and changed:** all AI output went through a commit-verify loop. Each feature was tested against the running app inside Sail containers, validated with PHPUnit, and iterated when tests failed or a previously-passing test broke. Architectural decisions (the ten ADRs) were authored collaboratively — the agent proposed rationale and I approved, modified, or rejected each decision. No code was committed without the full test suite passing. The agent system is designed so that a previously-passing test failing is treated as the code being wrong, never the test.
 
 ---
 
