@@ -4,6 +4,15 @@ set -euo pipefail
 # ─── Ensure storage dirs exist ───────────────────────────────────────────────
 mkdir -p storage/framework/{sessions,views,cache} storage/logs bootstrap/cache
 
+# ─── Sync public assets into shared volume ───────────────────────────────────
+# The public/ dir is a Docker volume shared with nginx. On rebuild the image
+# has fresh Vite-built assets but the volume may retain stale files.
+# Copy from the build snapshot (saved in Dockerfile) into the live volume.
+if [ -d /var/www/html/public-build ]; then
+    echo "[entrypoint] Syncing public assets into shared volume..."
+    cp -a /var/www/html/public-build/. /var/www/html/public/
+fi
+
 # ─── Wait for Postgres ────────────────────────────────────────────────────────
 echo "[entrypoint] Waiting for Postgres at ${DB_HOST:-postgres}:${DB_PORT:-5432}..."
 until pg_isready -h "${DB_HOST:-postgres}" -p "${DB_PORT:-5432}" -U "${DB_USERNAME:-sail}" -q; do

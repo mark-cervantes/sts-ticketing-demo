@@ -100,6 +100,10 @@ COPY --from=composer --chown=www-data:www-data /app/vendor ./vendor
 COPY --chown=www-data:www-data docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Snapshot public/ so entrypoint can sync into the shared volume on every boot.
+# Without this, a Docker named volume retains stale assets from a previous build.
+RUN cp -a public public-build
+
 # Storage directories writable
 RUN mkdir -p storage/framework/{sessions,views,cache} \
              storage/logs \
