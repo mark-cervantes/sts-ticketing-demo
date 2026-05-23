@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2Icon, MessageSquareIcon } from '@lucide/vue'
 import { toast } from 'vue-sonner'
+import CommentReactions from '@/components/issues/CommentReactions.vue'
 
 interface CommentThreadProps {
   comments: readonly IssueComment[] | IssueComment[]
@@ -144,6 +145,10 @@ async function handleSubmit(): Promise<void> {
         <p class="whitespace-pre-wrap text-sm text-foreground">
           {{ comment.body }}
         </p>
+        <CommentReactions
+          :comment-id="comment.id"
+          :initial-reactions="comment.reactions_summary"
+        />
       </div>
     </div>
 
@@ -183,6 +188,16 @@ async function handleSubmit(): Promise<void> {
           {{ submitting ? 'Posting…' : 'Comment' }}
         </Button>
       </div>
+    </div>
+
+    <!-- Permission explanation when commenting is disabled -->
+    <div v-else class="rounded-md border border-dashed border-border bg-muted/20 px-4 py-3 text-center">
+      <p class="text-sm text-muted-foreground">
+        You don't have permission to comment on this issue.
+      </p>
+      <p class="mt-1 text-xs text-muted-foreground/70">
+        Ask the owner to share it with you.
+      </p>
     </div>
   </div>
 </template>

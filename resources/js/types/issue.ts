@@ -38,11 +38,25 @@ export interface IssueUser {
   name: string
 }
 
+/** Per-emoji reaction summary from the API. */
+export interface ReactionSummary {
+  count: number
+  /** Whether the current authenticated user reacted with this emoji. */
+  reacted: boolean
+}
+
 export interface IssueComment {
   id: number
   body: string
   created_at: string
   user: IssueUser
+  reactions_summary?: Record<string, ReactionSummary>
+}
+
+/** Response shape from POST /api/comments/{id}/reactions */
+export interface ReactionToggleResponse {
+  toggled: 'added' | 'removed'
+  reactions_summary: Record<string, ReactionSummary>
 }
 
 export interface IssueCategory {

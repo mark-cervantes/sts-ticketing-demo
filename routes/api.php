@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\CommentReactionController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\IssueController;
@@ -16,3 +17,9 @@ Route::middleware('auth')->apiResource('categories', CategoryController::class)-
 Route::middleware('auth')->get('issues/{issue}/stream', IssueSseController::class);
 
 Route::middleware('auth')->apiResource('issues.shares', ShareController::class)->shallow();
+
+// Emoji reactions on comments
+Route::middleware('auth')->group(function () {
+    Route::post('comments/{comment}/reactions', [CommentReactionController::class, 'toggle']);
+    Route::get('comments/{comment}/reactions', [CommentReactionController::class, 'index']);
+});
