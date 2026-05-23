@@ -10,7 +10,9 @@ COPY resources/ resources/
 COPY public/ public/
 COPY vite.config.js tsconfig.json ./
 
-RUN npm run build
+# Skip vue-tsc in Docker (vendor/ziggy types unavailable in node stage).
+# Type checking is done in CI and local dev (`make verify-visual`).
+RUN npx vite build
 
 # ─── Stage 2: Composer — install PHP dependencies (no dev) ───────────────────
 FROM composer:2 AS composer
