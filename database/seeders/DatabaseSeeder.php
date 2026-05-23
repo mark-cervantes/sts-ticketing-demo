@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\AiSetting;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
@@ -31,6 +32,9 @@ class DatabaseSeeder extends Seeder
                 CommentSeeder::class,
                 IssueShareSeeder::class,
             ]);
+
+            // Ensure a default AI settings row exists for fresh deploys.
+            AiSetting::firstOrCreate([], ['provider' => 'rules']);
         });
     }
 }

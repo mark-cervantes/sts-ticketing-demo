@@ -15,7 +15,11 @@ use Illuminate\Support\Manager;
  * Implements config-time auto-fallback: if the configured driver is 'llm'
  * but no API key is set, getDefaultDriver() returns 'rules' transparently.
  *
+ * DB settings are pushed into config at application boot time via
+ * AppServiceProvider, so this class only needs to read config.
+ *
  * @see SRS §7.2
+ * @see AppServiceProvider::boot() — where AiSetting::current() is read
  *
  * @method SummaryGeneratorInterface driver(?string $driver = null)
  */
