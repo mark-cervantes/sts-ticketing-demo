@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import Checkbox from '@/Components/Checkbox.vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
-import InputError from '@/Components/InputError.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 defineProps<{
@@ -31,68 +31,108 @@ const submit = () => {
     <GuestLayout>
         <Head title="Log in" />
 
-        <div v-if="status" class="mb-4 text-sm font-medium text-green-600">
-            {{ status }}
-        </div>
+        <Card class="border-border shadow-sm">
+            <CardHeader class="space-y-1 pb-4">
+                <CardTitle class="text-2xl font-bold text-foreground">
+                    Welcome back
+                </CardTitle>
+                <CardDescription class="text-muted-foreground">
+                    Sign in to your account to continue
+                </CardDescription>
+            </CardHeader>
 
-        <form @submit.prevent="submit">
-            <div>
-                <InputLabel for="email" value="Email" />
+            <CardContent>
+                <!-- Status message (e.g., after password reset) -->
+                <div
+                    v-if="status"
+                    class="mb-4 rounded-md bg-primary/10 px-4 py-3 text-sm font-medium text-primary"
+                >
+                    {{ status }}
+                </div>
 
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autofocus
-                    autocomplete="username"
-                />
+                <form @submit.prevent="submit" class="space-y-4">
+                    <!-- Email -->
+                    <div class="space-y-1.5">
+                        <Label for="email" class="text-foreground">Email</Label>
+                        <Input
+                            id="email"
+                            type="email"
+                            v-model="form.email"
+                            placeholder="you@example.com"
+                            required
+                            autofocus
+                            autocomplete="username"
+                            :aria-invalid="!!form.errors.email"
+                        />
+                        <p v-if="form.errors.email" class="text-sm text-destructive">
+                            {{ form.errors.email }}
+                        </p>
+                    </div>
 
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
+                    <!-- Password -->
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between">
+                            <Label for="password" class="text-foreground">Password</Label>
+                            <Link
+                                v-if="canResetPassword"
+                                :href="route('password.request')"
+                                class="text-sm text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+                            >
+                                Forgot password?
+                            </Link>
+                        </div>
+                        <Input
+                            id="password"
+                            type="password"
+                            v-model="form.password"
+                            placeholder="••••••••"
+                            required
+                            autocomplete="current-password"
+                            :aria-invalid="!!form.errors.password"
+                        />
+                        <p v-if="form.errors.password" class="text-sm text-destructive">
+                            {{ form.errors.password }}
+                        </p>
+                    </div>
 
-            <div class="mt-4">
-                <InputLabel for="password" value="Password" />
+                    <!-- Remember me -->
+                    <div class="flex items-center gap-2">
+                        <Checkbox
+                            id="remember"
+                            name="remember"
+                            v-model:checked="form.remember"
+                        />
+                        <Label
+                            for="remember"
+                            class="cursor-pointer text-sm font-normal text-muted-foreground"
+                        >
+                            Remember me for 30 days
+                        </Label>
+                    </div>
 
-                <TextInput
-                    id="password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    v-model="form.password"
-                    required
-                    autocomplete="current-password"
-                />
-
-                <InputError class="mt-2" :message="form.errors.password" />
-            </div>
-
-            <div class="mt-4 block">
-                <label class="flex items-center">
-                    <Checkbox name="remember" v-model:checked="form.remember" />
-                    <span class="ms-2 text-sm text-gray-600"
-                        >Remember me</span
+                    <!-- Submit -->
+                    <Button
+                        type="submit"
+                        class="w-full"
+                        :disabled="form.processing"
                     >
-                </label>
-            </div>
+                        <span v-if="form.processing">Signing in…</span>
+                        <span v-else>Sign in</span>
+                    </Button>
+                </form>
+            </CardContent>
 
-            <div class="mt-4 flex items-center justify-end">
-                <Link
-                    v-if="canResetPassword"
-                    :href="route('password.request')"
-                    class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                >
-                    Forgot your password?
-                </Link>
-
-                <PrimaryButton
-                    class="ms-4"
-                    :class="{ 'opacity-25': form.processing }"
-                    :disabled="form.processing"
-                >
-                    Log in
-                </PrimaryButton>
-            </div>
-        </form>
+            <CardFooter class="flex justify-center border-t border-border pt-4">
+                <p class="text-sm text-muted-foreground">
+                    Don't have an account?
+                    <Link
+                        :href="route('register')"
+                        class="font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                        Create one
+                    </Link>
+                </p>
+            </CardFooter>
+        </Card>
     </GuestLayout>
 </template>
