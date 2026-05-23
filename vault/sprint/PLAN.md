@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 01 COMPLETE ✅ (all 5 tasks + 4 hygiene follow-ups filed; deployable checkpoint on main)
+> **Status:** Sprint 02 COMPLETE ✅ — Sprint 03 PLANNING (6 tasks filed in backlog)
 
 ## Dev Environment Reminder
 
@@ -70,33 +70,34 @@ When all `XX.*` tasks are in `done/`:
 | 01.02.50 | Gitignore .obsidian editor state            | ✅ done    | —           | chore/gitignore-obsidian |
 | 01.02.60 | Clean components.json tailwind.config       | ✅ done    | 01.02       | chore/components-json-cleanup |
 | 01.03.00 | Models + Migrations + Enums                 | ✅ done    | 01.02       | feature/models          |
-| 01.03.50 | Restore categories.name unique + test fix   | backlog    | 01.03       | chore/category-name-unique |
+| 01.03.50 | Restore categories.name unique + test fix   | ✅ done    | 01.03       | chore/category-name-unique |
 | 01.04.00 | Factories + Seeders                         | ✅ done    | 01.03       | feature/seeders         |
 | 01.05.00 | Auth customization + Policies               | ✅ done    | 01.03       | feature/auth            |
-| 01.05.50 | Policy coverage cleanup                     | backlog    | 01.05, 02.01 | chore/policy-coverage-cleanup |
+| 01.05.50 | Policy coverage cleanup                     | ✅ done    | 01.05, 02.01 | chore/policy-coverage-cleanup |
 
-### Sprint 02: Core API + AI Pipeline
+### Sprint 02: Core API + AI Pipeline ✅
 > One deployable outcome: full issue CRUD via API, comments, categories, AI summaries generated.
+> **241 tests, all passing. 14 total done tasks across sprints 01 + 02.**
 
-| Task ID  | Title                        | Depends On  | Branch                    | Parallel? |
-|----------|------------------------------|-------------|---------------------------|-----------|
-| 02.01.00 | Issue CRUD API + tests       | Sprint 01   | feature/issue-crud        | —         |
-| 02.02.00 | Comments API + tests         | 02.01       | feature/comments          | —         |
-| 02.03.00 | Categories API + tests       | 02.01       | feature/categories        | w/ 02.02  |
-| 02.04.00 | AI Summary Pipeline + tests  | 02.01       | feature/ai-pipeline       | w/ 02.02  |
-| 02.05.00 | Filters + Pagination + Sort  | 02.01       | feature/filters           | w/ 02.04  |
+| Task ID  | Title                        | Status     | Depends On  | Branch                    | Parallel? |
+|----------|------------------------------|------------|-------------|---------------------------|-----------|
+| 02.01.00 | Issue CRUD API + tests       | ✅ done    | Sprint 01   | feature/issue-crud        | —         |
+| 02.02.00 | Comments API + tests         | ✅ done    | 02.01       | feature/comments          | —         |
+| 02.03.00 | Categories API + tests       | ✅ done    | 02.01       | feature/categories        | w/ 02.02  |
+| 02.04.00 | AI Summary Pipeline + tests  | ✅ done    | 02.01       | feature/ai-pipeline       | w/ 02.02  |
+| 02.05.00 | Filters + Pagination + Sort  | ✅ done    | 02.01       | feature/filters           | w/ 02.04  |
 
-### Sprint 03: Frontend (Kanban Dashboard)
+### Sprint 03: Frontend (Kanban Dashboard) ← CURRENT
 > One deployable outcome: full Kanban UI with modals, drag-drop, real-time summary.
 
-| Task ID  | Title                        | Depends On  | Branch                    | Parallel? |
-|----------|------------------------------|-------------|---------------------------|-----------|
-| 03.01.00 | Design system + layout       | Sprint 02   | feature/design-system     | —         |
-| 03.02.00 | Kanban board + drag-drop     | 03.01       | feature/kanban            | —         |
-| 03.03.00 | Issue create modal           | 03.01       | feature/create-modal      | w/ 03.02  |
-| 03.04.00 | Issue detail slide-over      | 03.02       | feature/issue-detail      | —         |
-| 03.05.00 | Comment thread UI            | 03.04       | feature/comment-ui        | —         |
-| 03.06.00 | SSE client (summary live)    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
+| Task ID  | Title                        | Status     | Depends On  | Branch                    | Parallel? |
+|----------|------------------------------|------------|-------------|---------------------------|-----------|
+| 03.01.00 | Design system + layout       | backlog    | Sprint 02   | feature/design-system     | —         |
+| 03.02.00 | Kanban board + drag-drop     | backlog    | 03.01       | feature/kanban            | —         |
+| 03.03.00 | Issue create modal           | backlog    | 03.01       | feature/create-modal      | w/ 03.02  |
+| 03.04.00 | Issue detail slide-over      | backlog    | 03.02       | feature/issue-detail      | —         |
+| 03.05.00 | Comment thread UI            | backlog    | 03.04       | feature/comment-ui        | —         |
+| 03.06.00 | SSE client (summary live)    | backlog    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
 
 ### Sprint 04: Stretch Features
 > One deployable outcome: sharing, scheduler, optimistic locking — all stretch items.
