@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 02 COMPLETE ✅ — Sprint 03 PLANNING (6 tasks filed in backlog)
+> **Status:** Sprint 03 COMPLETE ✅ — 252 tests, all passing. 20 done tasks across sprints 01–03.
 
 ## Dev Environment Reminder
 
@@ -87,17 +87,18 @@ When all `XX.*` tasks are in `done/`:
 | 02.04.00 | AI Summary Pipeline + tests  | ✅ done    | 02.01       | feature/ai-pipeline       | w/ 02.02  |
 | 02.05.00 | Filters + Pagination + Sort  | ✅ done    | 02.01       | feature/filters           | w/ 02.04  |
 
-### Sprint 03: Frontend (Kanban Dashboard) ← CURRENT
+### Sprint 03: Frontend (Kanban Dashboard) ✅
 > One deployable outcome: full Kanban UI with modals, drag-drop, real-time summary.
+> **252 tests, all passing. Dashboard-first Kanban with slide-over, comments, and live SSE updates.**
 
 | Task ID  | Title                        | Status     | Depends On  | Branch                    | Parallel? |
 |----------|------------------------------|------------|-------------|---------------------------|-----------|
-| 03.01.00 | Design system + layout       | backlog    | Sprint 02   | feature/design-system     | —         |
-| 03.02.00 | Kanban board + drag-drop     | backlog    | 03.01       | feature/kanban            | —         |
-| 03.03.00 | Issue create modal           | backlog    | 03.01       | feature/create-modal      | w/ 03.02  |
-| 03.04.00 | Issue detail slide-over      | backlog    | 03.02       | feature/issue-detail      | —         |
-| 03.05.00 | Comment thread UI            | backlog    | 03.04       | feature/comment-ui        | —         |
-| 03.06.00 | SSE client (summary live)    | backlog    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
+| 03.01.00 | Design system + layout       | ✅ done    | Sprint 02   | feature/design-system     | —         |
+| 03.02.00 | Kanban board + drag-drop     | ✅ done    | 03.01       | feature/kanban            | —         |
+| 03.03.00 | Issue create modal           | ✅ done    | 03.01       | feature/create-modal      | w/ 03.02  |
+| 03.04.00 | Issue detail slide-over      | ✅ done    | 03.02       | feature/issue-detail      | —         |
+| 03.05.00 | Comment thread UI            | ✅ done    | 03.04       | feature/comment-ui        | —         |
+| 03.06.00 | SSE client (summary live)    | ✅ done    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
 
 ### Sprint 04: Stretch Features
 > One deployable outcome: sharing, scheduler, optimistic locking — all stretch items.
