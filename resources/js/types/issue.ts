@@ -16,6 +16,13 @@ export interface IssueUser {
   name: string
 }
 
+export interface IssueComment {
+  id: number
+  body: string
+  created_at: string
+  user: IssueUser
+}
+
 export interface IssueCategory {
   id: number
   name: string
@@ -42,6 +49,8 @@ export interface Issue {
   user: IssueUser
   category: IssueCategory
   comments_count?: number
+  comments?: IssueComment[]
+  can_comment?: boolean
 }
 
 /** Filter state for the Kanban board sidebar. */
