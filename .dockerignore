@@ -1,0 +1,58 @@
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Dev dependencies (rebuilt in Docker stages)
+node_modules/
+vendor/
+
+# Tests
+tests/
+.phpunit.result.cache
+phpunit.xml
+
+# Sail / dev compose
+compose.yaml
+.sail/
+.devcontainer/
+
+# Environment secrets — never bake into image
+.env
+.env.*
+!.env.production.example
+
+# Storage — ephemeral runtime data
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+
+# Dev tooling config
+.editorconfig
+.npmrc
+playwright.config.ts
+test-results/
+graphify-out/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# OpenCode
+.opencode/
+opencode.json
+
+# Vault / docs (not needed at runtime)
+vault/
+README.md
+AGENTS.md
+Makefile
+boost.json
+components.json
