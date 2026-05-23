@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\CommentReactionController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommentController;
@@ -22,4 +23,12 @@ Route::middleware('auth')->apiResource('issues.shares', ShareController::class)-
 Route::middleware('auth')->group(function () {
     Route::post('comments/{comment}/reactions', [CommentReactionController::class, 'toggle']);
     Route::get('comments/{comment}/reactions', [CommentReactionController::class, 'index']);
+});
+
+// AI settings
+Route::middleware('auth')->group(function () {
+    Route::get('settings/ai', [AiSettingsController::class, 'show']);
+    Route::put('settings/ai', [AiSettingsController::class, 'update']);
+    Route::post('settings/ai/test', [AiSettingsController::class, 'test']);
+    Route::get('settings/ai/models', [AiSettingsController::class, 'models']);
 });
