@@ -1,7 +1,7 @@
 # Sprint Plan — Issue Intake & Smart Summary System
 
 > **Last updated:** 2026-05-23
-> **Status:** Sprint 03 COMPLETE ✅ — 252 tests, all passing. 20 done tasks across sprints 01–03.
+> **Status:** Sprint 04 COMPLETE ✅ — 283 tests, all passing. 24 done tasks across sprints 01–04.
 
 ## Dev Environment Reminder
 
@@ -100,17 +100,18 @@ When all `XX.*` tasks are in `done/`:
 | 03.05.00 | Comment thread UI            | ✅ done    | 03.04       | feature/comment-ui        | —         |
 | 03.06.00 | SSE client (summary live)    | ✅ done    | 03.04, 02.04| feature/sse-client        | w/ 03.05  |
 
-### Sprint 04: Stretch Features ← NEXT
+### Sprint 04: Stretch Features ✅
 > One deployable outcome: sharing, scheduler, optimistic locking — all stretch items.
+> **283 tests, all passing.**
 
 | Task ID  | Title                        | Status     | Depends On  | Branch                    | Parallel? |
 |----------|------------------------------|------------|-------------|---------------------------|-----------|
-| 04.01.00 | Sharing + Visibility         | backlog    | Sprint 03   | feature/sharing           | —         |
-| 04.02.00 | Scheduler (needs_attention)  | backlog    | Sprint 02   | feature/scheduler         | w/ 04.01  |
-| 04.03.00 | Optimistic Locking UI        | backlog    | Sprint 03   | feature/optimistic-lock   | w/ 04.01  |
-| 04.04.00 | Share UI (slide-over section)| backlog    | 04.01       | feature/share-ui          | —         |
+| 04.01.00 | Sharing + Visibility         | ✅ done    | Sprint 03   | feature/sharing           | —         |
+| 04.02.00 | Scheduler (needs_attention)  | ✅ done    | Sprint 02   | feature/scheduler         | w/ 04.01  |
+| 04.03.00 | Optimistic Locking UI        | ✅ done    | Sprint 03   | feature/optimistic-lock   | w/ 04.01  |
+| 04.04.00 | Share UI (slide-over section)| ✅ done    | 04.01       | feature/share-ui          | —         |
 
-### Sprint 05: Deployment + Documentation
+### Sprint 05: Deployment + Documentation ← NEXT
 > One deployable outcome: production Docker setup works, README complete, submitted.
 > Note: Sail's `compose.yaml` is DEV-only. Production needs its own setup.
 
