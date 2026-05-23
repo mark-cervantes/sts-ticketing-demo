@@ -16,6 +16,7 @@ const props = defineProps<KanbanColumnProps>()
 const emit = defineEmits<{
   loadMore: [status: IssueStatus]
   moveIssue: [issueId: number, fromStatus: IssueStatus, toStatus: IssueStatus]
+  selectIssue: [issueId: number]
 }>()
 
 function handleDragEnd(evt: { item?: { dataset?: { issueId?: string; fromStatus?: string } } }): void {
@@ -70,7 +71,10 @@ function handleAdd(evt: {
           :data-issue-id="element.id"
           :data-from-status="element.status"
         >
-          <IssueCard :issue="element" />
+          <IssueCard
+            :issue="element"
+            @select="(id: number) => emit('selectIssue', id)"
+          />
         </div>
       </template>
 

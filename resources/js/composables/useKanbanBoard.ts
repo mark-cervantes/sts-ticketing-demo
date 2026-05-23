@@ -8,6 +8,7 @@ import type {
 } from '@/types/issue'
 import { STATUS_CONFIG } from '@/types/issue'
 import { useIssueFilters } from '@/composables/useIssueFilters'
+import { apiFetch, apiPatch, buildQueryString } from '@/composables/useApiFetch'
 
 const PER_PAGE = 15
 
@@ -30,53 +31,6 @@ const columnLoading = ref<Record<IssueStatus, boolean>>({
   in_progress: false,
   resolved: false,
 })
-
-function getCsrfToken(): string {
-  const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : ''
-}
-
-function buildQueryString(params: Record<string, string>): string {
-  const qs = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value) qs.set(key, value)
-  }
-  return qs.toString()
-}
-
-async function apiFetch<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      'X-XSRF-TOKEN': getCsrfToken(),
-    },
-    credentials: 'same-origin',
-  })
-
-  if (response.status === 401) {
-    toast.error('Session expired — please log in again.')
-    throw new Error('Unauthorized')
-  }
-
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status}`)
-  }
-
-  return response.json() as Promise<T>
-}
-
-async function apiPatch(url: string, body: Record<string, unknown>): Promise<Response> {
-  return fetch(url, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-XSRF-TOKEN': getCsrfToken(),
-    },
-    credentials: 'same-origin',
-    body: JSON.stringify(body),
-  })
-}
 
 /**
  * Fetch issues for a single status column (or all if no status specified).
@@ -101,6 +55,45 @@ async function fetchColumn(
   }
   const qs = buildQueryString(params)
   return apiFetch<PaginatedResponse<Issue>>(`/api/issues?${qs}`)
+}
+
+/**
+ * Update an issue object in the board columns.
+ * If status changed, moves the card from the old column to the new one.
+ * If other fields changed, updates the issue in-place.
+ */
+function updateIssueInBoard(updatedIssue: Issue, oldStatus?: IssueStatus): void {
+  const newStatus = updatedIssue.status
+  const effectiveOldStatus = oldStatus ?? newStatus
+
+  if (effectiveOldStatus !== newStatus) {
+    // Remove from old column
+    const oldCol = columnMap.value[effectiveOldStatus]
+    const oldIdx = oldCol.findIndex((i) => i.id === updatedIssue.id)
+    if (oldIdx !== -1) {
+      oldCol.splice(oldIdx, 1)
+    }
+    // Add to new column at the top
+    columnMap.value[newStatus].unshift(updatedIssue)
+  } else {
+    // Update in-place within the same column
+    const col = columnMap.value[newStatus]
+    const idx = col.findIndex((i) => i.id === updatedIssue.id)
+    if (idx !== -1) {
+      col.splice(idx, 1, updatedIssue)
+    }
+  }
+}
+
+/**
+ * Remove an issue from the board after deletion.
+ */
+function removeIssueFromBoard(issueId: number, status: IssueStatus): void {
+  const col = columnMap.value[status]
+  const idx = col.findIndex((i) => i.id === issueId)
+  if (idx !== -1) {
+    col.splice(idx, 1)
+  }
 }
 
 export function useKanbanBoard() {
@@ -275,5 +268,7 @@ export function useKanbanBoard() {
     loadInitial,
     loadMore,
     moveIssue,
+    updateIssueInBoard,
+    removeIssueFromBoard,
   }
 }
