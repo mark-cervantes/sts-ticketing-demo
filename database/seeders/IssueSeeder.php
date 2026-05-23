@@ -47,9 +47,13 @@ class IssueSeeder extends Seeder
         // -------------------------------------------------------------------
 
         // 1. Critical + needs_attention + summary ready + deadline
+        // Summary text is pinned (not random) so demo user always sees a realistic AI summary.
         Issue::factory()
             ->needsAttention()
-            ->summaryReady()
+            ->summaryReady(
+                'The user reports intermittent 502 errors when accessing the billing portal. Logs indicate upstream timeout from the payment gateway after 30s. This correlates with peak-hour traffic spikes observed in the last 7 days.',
+                'Increase payment gateway timeout to 60s and add retry logic with exponential backoff.',
+            )
             ->inProgress()
             ->public()
             ->create([

@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: sail
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: laravel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sail"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, redis, pcntl, bcmath, gd, intl, zip
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=pgsql/' .env
+          sed -i 's/# DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/' .env
+          sed -i 's/# DB_PORT=5432/DB_PORT=5432/' .env
+          sed -i 's/# DB_DATABASE=laravel/DB_DATABASE=laravel/' .env
+          sed -i 's/# DB_USERNAME=root/DB_USERNAME=sail/' .env
+          sed -i 's/# DB_PASSWORD=/DB_PASSWORD=password/' .env
+          php artisan key:generate
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run tests
+        run: php artisan test --compact
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -e
+
+            APP_DIR="$HOME/projects/sts-ticketing"
+
+            # Clone or pull
+            if [ ! -d "$APP_DIR" ]; then
+              git clone git@github.com:mark-cervantes/sts-ticketing-demo.git "$APP_DIR"
+            fi
+
+            cd "$APP_DIR"
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            # Copy production env if first deploy
+            if [ ! -f .env ]; then
+              cp .env.production.example .env
+              echo "⚠️  First deploy: edit $APP_DIR/.env with production values, then re-run"
+              exit 1
+            fi
+
+            # Build and deploy
+            docker compose -f docker-compose.prod.yml build --no-cache
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml up -d
+
+            # Wait for app to be ready
+            echo "Waiting for app to start..."
+            sleep 10
+
+            # Check health
+            docker compose -f docker-compose.prod.yml ps
+            echo ""
+            echo "✅ Deployment complete"
+
+            # Prune old images to save disk
+            docker image prune -f

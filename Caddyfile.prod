@@ -1,0 +1,25 @@
+# Caddyfile.prod — Caddy snippet for sts-demo.betamaxgroup.tech
+#
+# The production host uses a single :80 block with @hostname matchers.
+# This snippet should be added INSIDE the existing :80 { ... } block
+# in /etc/caddy/Caddyfile, BEFORE the final `handle { respond 404 }`.
+#
+# The deploy script (scripts/deploy.sh) handles this automatically.
+# For manual setup, insert the @sts block below into /etc/caddy/Caddyfile.
+#
+# NOTES:
+#   - Caddy runs on the HOST, not inside Docker.
+#   - Nginx inside Docker is bound to 127.0.0.1:8080 (localhost only).
+#   - Caddy auto-provisions HTTPS via ACME when it sees the domain in the :80 block.
+#   - flush_interval -1 is critical for SSE streaming (/api/issues/*/stream).
+
+# ─── STS Ticketing Demo ─────────────────────────────────────────
+
+#   @sts host sts-demo.betamaxgroup.tech
+#   handle @sts {
+#       reverse_proxy 127.0.0.1:8080 {
+#           header_up X-Forwarded-Proto https
+#           header_up X-Forwarded-Port 443
+#           flush_interval -1
+#       }
+#   }

@@ -27,8 +27,30 @@ Project agents in `.opencode/agents/` are the DEFAULT for this project. Do not u
 2. qa → writes RED tests
 3. coder-backend → implements until tests pass
 4. coder-frontend → implements UI (skip if backend-only)
-5. tech-lead → reviews diff, approves or requests changes
-6. On approval: `feat(scope): description - done` → merge to dev
+5. If the task touches UI/frontend/browser-visible behavior: run `make verify-visual` and keep the evidence artifacts
+6. tech-lead → reviews diff **and visual evidence**, approves or requests changes
+7. On approval: `feat(scope): description - done` → merge to dev
+
+## Visual Verification Contract
+
+**This gate is mandatory for any task that touches browser-visible behavior.** That includes changes under `resources/js/`, `resources/css/`, Inertia pages/layouts/forms, auth flow, navigation, Horizon access flow, Vite/runtime wiring, or anything a user can see or trigger in the browser.
+
+Before requesting tech-lead review on such work:
+1. Run `make verify-visual`
+2. Keep the Playwright artifact paths from `test-results/playwright/smoke/`
+3. Confirm the gate passed with zero browser `console.error` events and zero uncaught `pageerror` events
+
+Passing the visual gate means all of the following are true:
+- `make status` is green before the check starts
+- `vue-tsc --noEmit` passes
+- Playwright smoke passes against the live app
+- Screenshots exist for the covered pages in `test-results/playwright/smoke/`
+
+**HTTP 200 and PHPUnit alone are not sufficient evidence for frontend completion.**
+
+**Tech-lead must reject review if visual evidence is missing** for any browser-visible task.
+
+If a task changes a page or flow that is not already covered by the smoke spec, extend `tests/Playwright/smoke.spec.ts` in the same branch before calling the task done.
 
 ## Cold-Start Protocol
 
@@ -51,6 +73,7 @@ Every new session:
 |---|---|
 | `make dev` | Start everything (containers + vite + queue), idempotent — safe to re-run |
 | `make status` | Health check all services + HTTP — run before and after changes |
+| `make verify-visual` | Run the live browser verification gate (vue-tsc + Playwright smoke + screenshots) |
 | `make logs` | Tail vite + queue logs |
 | `make test` | Full PHPUnit suite |
 | `make test-filter FILTER=ClassName` | Single test class |

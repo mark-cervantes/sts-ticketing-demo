@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @see SPEC §4.2 / ADR-005 / BR-01 / BR-03 / FR-02
  */
 #[Fillable([
+    'user_id',
     'title',
     'description',
     'priority',
@@ -124,6 +125,66 @@ class Issue extends Model
     // -------------------------------------------------------------------------
     // Scopes
     // -------------------------------------------------------------------------
+
+    /**
+     * Scope to filter by status enum value.
+     *
+     * Silently ignores invalid status strings (tryFrom returns null → no-op).
+     */
+    public function scopeFilterByStatus(Builder $query, ?string $value): Builder
+    {
+        if ($value === null) {
+            return $query;
+        }
+
+        $status = Status::tryFrom($value);
+
+        if ($status === null) {
+            return $query;
+        }
+
+        return $query->where('status', $status);
+    }
+
+    /**
+     * Scope to filter by priority enum value.
+     *
+     * Silently ignores invalid priority strings (tryFrom returns null → no-op).
+     */
+    public function scopeFilterByPriority(Builder $query, ?string $value): Builder
+    {
+        if ($value === null) {
+            return $query;
+        }
+
+        $priority = Priority::tryFrom($value);
+
+        if ($priority === null) {
+            return $query;
+        }
+
+        return $query->where('priority', $priority);
+    }
+
+    /**
+     * Scope to filter by category slug.
+     *
+     * Resolves slug → category_id. Silently ignores unknown slugs.
+     */
+    public function scopeFilterByCategory(Builder $query, ?string $slug): Builder
+    {
+        if ($slug === null) {
+            return $query;
+        }
+
+        $categoryId = Category::where('slug', $slug)->value('id');
+
+        if ($categoryId === null) {
+            return $query;
+        }
+
+        return $query->where('category_id', $categoryId);
+    }
 
     /**
      * Scope to issues accessible by the given user.
