@@ -21,6 +21,10 @@ import { useIssueFilters } from '@/composables/useIssueFilters'
 import type { IssueStatus, IssuePriority } from '@/types/issue'
 import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
 
+const emit = defineEmits<{
+  (e: 'create-issue'): void
+}>()
+
 const {
   filters,
   categories,
@@ -65,7 +69,7 @@ const hasActiveFilters = computed(() => {
   <aside class="flex h-full w-[var(--sidebar-width)] flex-col bg-sidebar text-sidebar-foreground">
     <!-- New Issue button -->
     <div class="p-4">
-      <Button class="w-full gap-2" size="lg">
+      <Button class="w-full gap-2" size="lg" @click="emit('create-issue')">
         <PlusIcon class="size-4" />
         New Issue
       </Button>
