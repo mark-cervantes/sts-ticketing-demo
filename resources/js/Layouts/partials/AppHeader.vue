@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePage, Link, router } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon } from '@lucide/vue'
+import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -16,6 +16,7 @@ import { useDarkMode } from '@/composables/useDarkMode'
 
 interface AppHeaderProps {
   onToggleSidebar?: () => void
+  onOpenCategories?: () => void
 }
 
 defineProps<AppHeaderProps>()
@@ -51,6 +52,16 @@ function handleLogout(): void {
     </Link>
 
     <div class="flex-1" />
+
+    <!-- Manage Categories -->
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label="Manage categories"
+      @click="onOpenCategories?.()"
+    >
+      <TagIcon class="size-5" />
+    </Button>
 
     <!-- Dark mode toggle -->
     <Button
