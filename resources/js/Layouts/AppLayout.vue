@@ -34,6 +34,10 @@ function openCreateIssue(): void {
 function openCategoryManager(): void {
   categoryManagerOpen.value = true
 }
+
+function handleIssueCreated(): void {
+  window.dispatchEvent(new CustomEvent('issue:created'))
+}
 </script>
 
 <template>
@@ -60,7 +64,7 @@ function openCategoryManager(): void {
       </Sheet>
 
       <!-- Create Issue Dialog -->
-      <CreateIssueDialog v-model:open="createIssueOpen" />
+      <CreateIssueDialog v-model:open="createIssueOpen" @created="handleIssueCreated" />
 
       <!-- Category Manager Sheet (slide-over from right) -->
       <Sheet v-model:open="categoryManagerOpen">
