@@ -53,6 +53,7 @@ class IssueSeeder extends Seeder
             ->summaryReady(
                 'The user reports intermittent 502 errors when accessing the billing portal. Logs indicate upstream timeout from the payment gateway after 30s. This correlates with peak-hour traffic spikes observed in the last 7 days.',
                 'Increase payment gateway timeout to 60s and add retry logic with exponential backoff.',
+                'Add payment gateway health check — Implement periodic heartbeat check to detect gateway degradation before it impacts users',
             )
             ->inProgress()
             ->public()

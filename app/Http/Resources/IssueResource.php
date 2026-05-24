@@ -33,6 +33,7 @@ class IssueResource extends JsonResource
             'summary_status' => $this->summary_status->value,
             'summary' => $this->summary,
             'suggested_next_action' => $this->suggested_next_action,
+            'suggested_next_ticket' => $this->suggested_next_ticket,
             'needs_attention' => $this->needs_attention,
             'deadline_at' => $this->deadline_at?->toIso8601String(),
             'user_id' => $this->user_id,

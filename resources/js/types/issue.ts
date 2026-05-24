@@ -76,6 +76,7 @@ export interface Issue {
   summary_status: SummaryStatus
   summary: string | null
   suggested_next_action: string | null
+  suggested_next_ticket: string | null
   needs_attention: boolean
   deadline_at: string | null
   user_id: number
