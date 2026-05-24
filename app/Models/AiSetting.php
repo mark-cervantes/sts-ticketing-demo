@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $base_url
  * @property string|null $api_key (encrypted)
  * @property string|null $model
+ * @property string|null $active_preset e.g. 'openrouter', 'ollama-cloud', null for custom
  * @property int|null $updated_by
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -37,6 +38,7 @@ class AiSetting extends Model
         'base_url',
         'api_key',
         'model',
+        'active_preset',
         'updated_by',
     ];
 

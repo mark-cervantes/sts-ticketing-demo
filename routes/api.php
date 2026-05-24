@@ -39,4 +39,5 @@ Route::middleware('auth')->group(function () {
     Route::put('settings/ai', [AiSettingsController::class, 'update']);
     Route::post('settings/ai/test', [AiSettingsController::class, 'test']);
     Route::get('settings/ai/models', [AiSettingsController::class, 'models']);
+    Route::get('settings/ai/presets', [AiSettingsController::class, 'presets']);
 });
