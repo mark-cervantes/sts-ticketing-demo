@@ -103,9 +103,16 @@ class LlmDriver implements SummaryGeneratorInterface
             );
         }
 
+        if (! array_key_exists('suggested_next_ticket', $parsed)) {
+            throw new SummaryGenerationException(
+                "LLM JSON response missing required key 'suggested_next_ticket'.",
+            );
+        }
+
         return new SummaryResult(
             summary: (string) $parsed['summary'],
             suggestedNextAction: (string) $parsed['suggested_next_action'],
+            suggestedNextTicket: (string) $parsed['suggested_next_ticket'],
             driver: 'llm',
         );
     }

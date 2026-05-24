@@ -53,6 +53,7 @@ import {
   AlertCircleIcon,
   ArrowRightIcon,
   RefreshCwIcon,
+  TicketPlusIcon,
 } from '@lucide/vue'
 import { apiPost } from '@/composables/useApiFetch'
 import { toast } from 'vue-sonner'
@@ -601,6 +602,24 @@ async function handleRegenerate(): Promise<void> {
                     </p>
                     <p class="mt-0.5 text-sm text-foreground">
                       {{ issue.suggested_next_action }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Suggested follow-up ticket card -->
+                <div
+                  v-if="issue.suggested_next_ticket"
+                  class="mt-2 flex gap-3 rounded-lg border border-border bg-muted/50 p-3"
+                >
+                  <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <TicketPlusIcon class="size-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Suggested Follow-up Ticket
+                    </p>
+                    <p class="mt-0.5 text-sm text-foreground">
+                      {{ issue.suggested_next_ticket }}
                     </p>
                   </div>
                 </div>

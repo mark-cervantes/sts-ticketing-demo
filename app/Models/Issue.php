@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'visibility',
     'summary',
     'suggested_next_action',
+    'suggested_next_ticket',
     'summary_status',
     'needs_attention',
     'deadline_at',

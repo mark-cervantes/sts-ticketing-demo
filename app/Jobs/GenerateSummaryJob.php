@@ -71,6 +71,7 @@ class GenerateSummaryJob implements ShouldQueue
 
         $this->issue->summary = $result->summary;
         $this->issue->suggested_next_action = $result->suggestedNextAction;
+        $this->issue->suggested_next_ticket = $result->suggestedNextTicket;
         $this->issue->summary_status = SummaryStatus::Ready;
         $this->issue->save();
 
