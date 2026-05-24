@@ -47,8 +47,8 @@ function handleLogout(): void {
 
     <!-- Logo / App name -->
     <Link :href="route('dashboard')" class="flex items-center gap-2 font-heading font-semibold text-foreground">
-      <span class="text-primary text-lg font-bold">●</span>
-      <span class="hidden sm:inline">Ticketing</span>
+      <img src="/images/logo-icon.svg" alt="STS" class="h-6 w-auto" />
+      <span class="hidden sm:inline">STS</span>
     </Link>
 
     <div class="flex-1" />
