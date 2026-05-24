@@ -21,17 +21,17 @@ test('auth and operator pages render without browser errors', async ({ page }) =
     });
 
     await page.goto('/login');
-    await expect(page).toHaveTitle(/Log in/i);
-    await expect(page.getByRole('button', { name: 'Log in' })).toBeVisible();
+    await expect(page).toHaveTitle(/Sign in/i);
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
 
     await page.goto('/register');
     await expect(page).toHaveTitle(/Register/i);
-    await expect(page.getByRole('button', { name: 'Register' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
 
     await page.goto('/login');
     await page.getByLabel('Email').fill('demo@example.com');
     await page.getByLabel('Password').fill('password');
-    await page.getByRole('button', { name: 'Log in' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
 
     await page.waitForURL('**/dashboard');
     // Kanban board renders three columns
