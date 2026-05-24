@@ -37,6 +37,14 @@ class UpdateAiSettingRequest extends FormRequest
      */
     public function rules(): array
     {
+        // When a preset is provided, provider and other fields are optional
+        // (they are resolved server-side from the preset config).
+        if ($this->has('preset')) {
+            return [
+                'preset' => ['required', 'string', 'max:100'],
+            ];
+        }
+
         return [
             'provider' => ['required', 'string', Rule::in(['rules', 'openrouter', 'ollama', 'custom'])],
             'base_url' => ['sometimes', 'nullable', 'string', 'max:500'],
@@ -48,11 +56,17 @@ class UpdateAiSettingRequest extends FormRequest
     /**
      * Additional validation: openrouter requires an api_key to be set — either
      * passed in this request OR already stored in the database.
+     * Skip this check when a preset is used (preset has its own key validation).
      *
      * @return array<string, string>
      */
     public function withValidator(Validator $validator): void
     {
+        // Preset path has separate validation in the controller.
+        if ($this->has('preset')) {
+            return;
+        }
+
         $validator->after(function (Validator $v): void {
             $provider = $this->input('provider');
 

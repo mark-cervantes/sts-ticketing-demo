@@ -14,6 +14,7 @@ use App\Services\Summary\Drivers\RulesDriver;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -21,9 +22,10 @@ use Illuminate\Support\Facades\Http;
  * Manages AI configuration settings.
  *
  * GET    /api/settings/ai          — show current settings (api_key masked)
- * PUT    /api/settings/ai          — update settings
+ * PUT    /api/settings/ai          — update settings (supports preset shorthand)
  * POST   /api/settings/ai/test     — test the current config with a dummy issue
  * GET    /api/settings/ai/models   — proxy OpenRouter model list (cached 1h)
+ * GET    /api/settings/ai/presets  — list available server-side presets (no keys)
  *
  * @see Task 08.01
  */
@@ -56,7 +58,13 @@ class AiSettingsController extends Controller
     /**
      * Update the AI settings.
      *
-     * api_key is only written when a non-empty string is provided.
+     * Supports two modes:
+     *   1. Preset mode: { "preset": "openrouter" } — resolves all fields from
+     *      config/ai-presets.php; api_key never comes from the frontend.
+     *   2. Manual mode: { "provider": "custom", "base_url": "...", ... } — the
+     *      existing field-by-field update behaviour.
+     *
+     * api_key is only written when a non-empty string is provided (manual mode).
      * An empty / null api_key in the request preserves the existing key.
      */
     public function update(UpdateAiSettingRequest $request): JsonResponse
@@ -64,6 +72,43 @@ class AiSettingsController extends Controller
         $settings = AiSetting::current();
         $validated = $request->validated();
 
+        // ── Preset mode ──────────────────────────────────────────────────────
+        if (isset($validated['preset'])) {
+            /** @var array{label:string,description:string,provider:string,base_url:string,model:string,api_key:string|null}|null $preset */
+            $preset = config('ai-presets.'.$validated['preset']);
+
+            if ($preset === null) {
+                return response()->json([
+                    'message' => 'The selected preset is not available.',
+                    'errors' => ['preset' => ['Unknown preset: '.$validated['preset']]],
+                ], 422);
+            }
+
+            if (empty($preset['api_key'])) {
+                return response()->json([
+                    'message' => 'The selected preset is not configured (missing API key).',
+                    'errors' => ['preset' => ['Preset "'.$validated['preset'].'" has no API key configured on this server.']],
+                ], 422);
+            }
+
+            $settings->provider = $preset['provider'];
+            $settings->base_url = $preset['base_url'] ?: null;
+            $settings->model = $preset['model'] ?: null;
+            $settings->api_key = $preset['api_key'];
+            $settings->active_preset = $validated['preset'];
+            $settings->updated_by = $request->user()->id;
+            $settings->save();
+            $settings->load('updatedBy');
+
+            Cache::forget('ai_settings.openrouter_models');
+            Artisan::call('queue:restart');
+
+            return response()->json([
+                'data' => $this->formatSettings($settings),
+            ]);
+        }
+
+        // ── Manual / custom mode ─────────────────────────────────────────────
         $settings->provider = $validated['provider'];
 
         if (array_key_exists('base_url', $validated)) {
@@ -81,6 +126,8 @@ class AiSettingsController extends Controller
             $settings->api_key = $incomingKey;
         }
 
+        // Manual update clears any active preset.
+        $settings->active_preset = null;
         $settings->updated_by = $request->user()->id;
         $settings->save();
 
@@ -92,11 +139,41 @@ class AiSettingsController extends Controller
         // Queue workers cache config at boot time. After changing AI settings,
         // signal all workers to restart so they pick up the new DB values
         // via AppServiceProvider::bootAiSettings() on their next boot cycle.
-        \Illuminate\Support\Facades\Artisan::call('queue:restart');
+        Artisan::call('queue:restart');
 
         return response()->json([
             'data' => $this->formatSettings($settings),
         ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // GET /api/settings/ai/presets
+    // -------------------------------------------------------------------------
+
+    /**
+     * Return the list of server-side AI presets.
+     *
+     * api_key is intentionally OMITTED from every entry — keys live server-side only.
+     * The `configured` flag indicates whether the env var has a value.
+     */
+    public function presets(): JsonResponse
+    {
+        /** @var array<string, array{label:string,description:string,provider:string,base_url:string,model:string,api_key:string|null}> $presets */
+        $presets = config('ai-presets', []);
+
+        $data = collect($presets)
+            ->map(fn (array $preset, string $key): array => [
+                'key' => $key,
+                'label' => $preset['label'],
+                'description' => $preset['description'],
+                'model' => $preset['model'],
+                'provider' => $preset['provider'],
+                'configured' => ! empty($preset['api_key']),
+            ])
+            ->values()
+            ->all();
+
+        return response()->json(['data' => $data]);
     }
 
     // -------------------------------------------------------------------------
@@ -235,6 +312,7 @@ class AiSettingsController extends Controller
             'api_key_set' => $apiKeySet,
             'api_key_masked' => $apiKeyMasked,
             'model' => $settings->model,
+            'active_preset' => $settings->active_preset,
             'updated_by' => $settings->updatedBy ? [
                 'id' => $settings->updatedBy->id,
                 'name' => $settings->updatedBy->name,
