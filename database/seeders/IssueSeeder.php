@@ -19,7 +19,7 @@ class IssueSeeder extends Seeder
      * - All 3 Status cases represented
      * - Mix of public/private (~4 public / 14 private)
      * - 5-7 with deadlines, rest without
-     * - ≥2 with summary_status=ready (summaryReady() state)
+     * - 16 with summary_status=ready, 1 processing, 1 failed (demo variety)
      * - ≥3 with needs_attention=true (critical/high priority triggers saving event)
      * - Distributed across all 5 users and 6 categories
      *
@@ -67,6 +67,7 @@ class IssueSeeder extends Seeder
         // 2. Critical + needs_attention (no deadline — priority alone triggers it)
         Issue::factory()
             ->critical()
+            ->summaryReady()
             ->open()
             ->public()
             ->create([
@@ -92,6 +93,7 @@ class IssueSeeder extends Seeder
         // 4. High priority + needs_attention (priority alone triggers flag)
         Issue::factory()
             ->highPriority()
+            ->summaryReady()
             ->open()
             ->create([
                 'user_id' => $users[3]->id,
@@ -103,6 +105,7 @@ class IssueSeeder extends Seeder
         // 5. High priority + needs_attention + deadline
         Issue::factory()
             ->highPriority()
+            ->summaryReady()
             ->inProgress()
             ->withDeadline(now()->addMinutes(90))
             ->create([
@@ -119,6 +122,7 @@ class IssueSeeder extends Seeder
         // 6. Medium + resolved + public
         Issue::factory()
             ->priority(Priority::Medium)
+            ->summaryReady()
             ->resolved()
             ->public()
             ->create([
@@ -131,6 +135,7 @@ class IssueSeeder extends Seeder
         // 7. Medium + in-progress + deadline
         Issue::factory()
             ->priority(Priority::Medium)
+            ->summaryReady()
             ->inProgress()
             ->withDeadline(now()->addHours(3))
             ->create([
@@ -158,6 +163,7 @@ class IssueSeeder extends Seeder
 
         // 9. Low + open (default)
         Issue::factory()
+            ->summaryReady()
             ->open()
             ->create([
                 'user_id' => $users[3]->id,
@@ -168,6 +174,7 @@ class IssueSeeder extends Seeder
 
         // 10. Low + resolved + public
         Issue::factory()
+            ->summaryReady()
             ->resolved()
             ->public()
             ->create([
@@ -190,6 +197,7 @@ class IssueSeeder extends Seeder
 
         // 12. Low + in-progress + deadline
         Issue::factory()
+            ->summaryReady()
             ->inProgress()
             ->withDeadline(now()->addHours(24))
             ->create([
@@ -206,6 +214,7 @@ class IssueSeeder extends Seeder
         // 13. Medium + resolved
         Issue::factory()
             ->priority(Priority::Medium)
+            ->summaryReady()
             ->resolved()
             ->create([
                 'user_id' => $users[2]->id,
@@ -216,6 +225,7 @@ class IssueSeeder extends Seeder
 
         // 14. Low + open + public
         Issue::factory()
+            ->summaryReady()
             ->open()
             ->public()
             ->create([
@@ -228,6 +238,7 @@ class IssueSeeder extends Seeder
         // 15. High + resolved + public
         Issue::factory()
             ->highPriority()
+            ->summaryReady()
             ->resolved()
             ->public()
             ->create([
@@ -239,6 +250,7 @@ class IssueSeeder extends Seeder
 
         // 16. Low + open
         Issue::factory()
+            ->summaryReady()
             ->open()
             ->create([
                 'user_id' => $users[0]->id,
@@ -250,6 +262,7 @@ class IssueSeeder extends Seeder
         // 17. Medium + open + deadline
         Issue::factory()
             ->priority(Priority::Medium)
+            ->summaryReady()
             ->open()
             ->withDeadline(now()->addHours(48))
             ->create([
@@ -262,6 +275,7 @@ class IssueSeeder extends Seeder
         // 18. Critical + open — extra needs_attention for safety margin
         Issue::factory()
             ->critical()
+            ->summaryReady()
             ->open()
             ->create([
                 'user_id' => $users[2]->id,
