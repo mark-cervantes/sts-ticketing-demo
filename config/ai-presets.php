@@ -13,7 +13,7 @@ return [
         'label' => 'Ollama Cloud',
         'description' => 'Ollama Cloud hosted models',
         'provider' => 'custom',
-        'base_url' => env('AI_PRESET_OLLAMA_URL', 'https://ollama.com/api'),
+        'base_url' => env('AI_PRESET_OLLAMA_URL', 'https://ollama.com/v1'),
         'model' => 'gemma3:4b',
         'api_key' => env('AI_PRESET_OLLAMA_KEY'),
     ],
