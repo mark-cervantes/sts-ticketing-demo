@@ -209,6 +209,20 @@ agents) know the *why* behind every choice. See
 Every HTTP request in this app walks the same pipeline. Understanding it lets
 you trace any bug or feature to the right file.
 
+If you come from **NestJS**, translate the request path like this:
+
+```text
+NestJS mental model:
+middleware -> guard -> validation pipe / DTO -> controller -> service -> repository -> serializer
+
+This Laravel project:
+middleware -> Form Request -> Policy -> controller -> service -> Eloquent model -> Resource
+```
+
+That is the single most important bridge between the two frameworks. Laravel
+distributes responsibilities differently, but the architectural concerns are the
+same.
+
 ```
 Browser
   │
@@ -249,6 +263,187 @@ IssueResource::toArray()          ← our resource transformer (custom, §8)
 JSON response → browser
 ```
 
+### Web route path vs API route path
+
+This project has **two request styles**.
+
+#### 1. Web/Inertia page requests
+
+Example from `routes/web.php`:
+
+```php
+Route::get('/dashboard', function () {
+    return Inertia::render('Dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
+```
+
+This does **not** return raw JSON. It returns an Inertia page definition that
+mounts a Vue page component in the browser.
+
+**NestJS comparison:** think of this more like server-delivered app shell
+rendering than a pure REST endpoint. It is closer to returning a web page with
+state than exposing a JSON API controller.
+
+#### 2. API requests
+
+Example from `routes/api.php`:
+
+```php
+Route::middleware('auth')->apiResource('issues', IssueController::class);
+```
+
+This is the traditional JSON API path. The frontend uses these endpoints for
+create/update/delete/fetch interactions after the page has loaded.
+
+**NestJS comparison:** this is the closest equivalent to your normal Nest
+controller methods (`@Post()`, `@Patch(':id')`, etc.).
+
+### Start at the route, not at the controller
+
+Laravel learners often open a controller first. That is too late.
+
+The correct question is:
+
+> **Which route matched, under which middleware, and with which parameter binding?**
+
+For example, `POST /api/issues` is declared indirectly through
+`Route::apiResource('issues', IssueController::class)`. That single line creates
+multiple route-method mappings, including:
+
+- `GET /api/issues` -> `index`
+- `POST /api/issues` -> `store`
+- `GET /api/issues/{issue}` -> `show`
+- `PATCH /api/issues/{issue}` -> `update`
+- `DELETE /api/issues/{issue}` -> `destroy`
+
+**Why this matters:** Laravel codebases often look smaller than NestJS codebases
+because route declarations can be more compact and more conventional. One line
+may imply five endpoints.
+
+### Middleware comes before your business logic
+
+In `bootstrap/app.php` this project configures middleware like this:
+
+```php
+$middleware->web(append: [
+    HandleInertiaRequests::class,
+    AddLinkHeadersForPreloadedAssets::class,
+]);
+
+$middleware->statefulApi();
+```
+
+And in route files it uses route-level middleware such as:
+
+```php
+Route::middleware('auth')->apiResource('issues', IssueController::class);
+```
+
+Two important lessons here:
+
+1. **Authentication is not controller code.** The route declares that the user
+   must already be authenticated before controller logic runs.
+2. **This app uses same-origin, stateful browser auth.** `statefulApi()` is a
+   strong signal that this is not a detached JWT API architecture.
+
+**NestJS comparison:** middleware + auth guard usually fill this role. Laravel
+just expresses it with route middleware and app bootstrap configuration.
+
+### Route model binding removes boilerplate
+
+Look at methods like:
+
+```php
+public function show(Issue $issue): IssueResource
+public function update(UpdateIssueRequest $request, Issue $issue): IssueResource
+public function destroy(Issue $issue): Response
+```
+
+Laravel automatically converts `{issue}` from the URL into an `Issue` model
+instance before the controller body executes.
+
+**NestJS comparison:** in many Nest projects you would manually:
+
+1. read `id` from `@Param()`
+2. pass it to a service
+3. fetch the entity
+4. throw a 404 yourself
+
+Laravel's implicit binding collapses that ceremony into the method signature.
+
+**Architectural effect:** controller code reads closer to domain language and
+further from transport plumbing.
+
+### The exact create-issue flow in this project
+
+Let us trace the most important path: creating an issue.
+
+#### Step 1 — Browser submits to `POST /api/issues`
+
+The Vue frontend sends the request after the user fills the create-issue UI.
+
+#### Step 2 — Route match
+
+`routes/api.php` maps that request to `IssueController::store()` through
+`apiResource()`.
+
+#### Step 3 — Auth middleware
+
+The `auth` middleware ensures there is an authenticated user attached to the
+request. If not, the request never reaches the controller.
+
+#### Step 4 — Form Request validation
+
+Laravel resolves `StoreIssueRequest` before entering the controller body.
+Validation failures return **422 Unprocessable Entity** automatically.
+
+#### Step 5 — Policy authorization
+
+Inside the controller, this line runs:
+
+```php
+$this->authorize('create', Issue::class);
+```
+
+That calls `IssuePolicy::create()` and returns **403 Forbidden** if the user is
+not allowed.
+
+#### Step 6 — Controller orchestration
+
+The controller delegates immediately:
+
+```php
+$issue = $this->service->create($request->user(), $request->validated());
+```
+
+The controller does not implement business rules directly.
+
+#### Step 7 — Service owns the write workflow
+
+`IssueService::create()`:
+
+- sets defaults like `status=open`
+- creates the Eloquent model
+- dispatches `GenerateSummaryJob`
+- loads relations for response shaping
+
+#### Step 8 — Model event computes derived state
+
+`Issue::booted()` hooks `saving`, which computes `needs_attention` before the row
+is persisted.
+
+#### Step 9 — Async side effect is queued
+
+The summary generation does not happen inline; the service dispatches a queued
+job. That means the request stays fast even when the AI system is slow.
+
+#### Step 10 — Resource shapes the JSON response
+
+The controller wraps the model in `IssueResource`, so the response is an API
+contract, not raw model serialization.
+
+### Why the controller is intentionally thin
+
 ### The thin controller pattern
 
 Open `app/Http/Controllers/IssueController.php`.
@@ -285,6 +480,10 @@ in their dedicated layers.
 auth + business logic all in one method), it is a code smell in Laravel. This
 project uses the opposite pattern deliberately.
 
+**NestJS comparison:** if you prefer clean Nest controllers where the transport
+layer delegates to a service, you should recognize exactly the same instinct
+here.
+
 ### Constructor injection
 
 Note the constructor:
@@ -306,7 +505,66 @@ yourself.
 **Framework-agnostic convention**: constructor injection (not a Laravel
 invention; this is SOLID's Dependency Inversion Principle).
 
+### Why the service layer exists in this request path
+
+Some Laravel apps skip services entirely and let controllers talk directly to
+models. That can work for trivial CRUD, but this project already has enough
+business rules that a service layer improves clarity.
+
+In `IssueService::create()` and `IssueService::update()`, the service owns:
+
+- default status and summary state assignment
+- optimistic locking checks
+- whether summary regeneration should be requeued
+- what side effects happen after persistence
+
+This is the same decision you would make in NestJS when you decide a controller
+should not directly call the ORM.
+
+### Where 422, 403, 404, and 409 come from
+
+As a learner, you should know which layer emits which class of error:
+
+| Status | Source in this project | Meaning |
+|---|---|---|
+| **422** | Form Request validation | Input shape/value invalid |
+| **403** | Policy authorization | User is authenticated but not allowed |
+| **404** | Route model binding | `{issue}` not found in DB |
+| **409** | `IssueService::update()` | Optimistic lock conflict |
+
+This is architecturally beautiful because each layer owns *its own failure mode*.
+The controller does not manually manufacture all of them.
+
+### Why this request path is good Laravel architecture
+
+This request lifecycle demonstrates several good practices at once:
+
+1. **Transport concerns are separated from business rules.**
+2. **Validation is declarative and reusable.**
+3. **Authorization is policy-driven, not ad hoc.**
+4. **Persistence is handled through Eloquent conventions.**
+5. **Slow side effects are async.**
+6. **Responses are explicitly shaped.**
+
+That is why this app feels structured instead of "controller soup."
+
 ### Reading exercise for §2
+
+1. Open `routes/api.php` and manually list every endpoint generated by
+   `apiResource('issues', IssueController::class)`.
+2. Open `IssueController::update()` and `IssueService::update()` side by side.
+   Mark which lines are transport/orchestration and which lines are business
+   workflow.
+3. In your own words, explain why **409 Conflict** is a service-layer concern in
+   this project rather than a controller concern.
+4. Translate the create-issue lifecycle into NestJS vocabulary:
+
+   ```text
+   route -> middleware -> validation -> authz -> controller -> service -> ORM -> response mapper
+   ```
+
+5. Optional: use `php artisan route:list --path=issues` inside Sail and compare
+   the generated routes to what you inferred from `apiResource()`.
 
 1. Open `IssueController::update()`. Trace the same layered path manually:
    which class handles validation? Which handles authorization? Where does the
