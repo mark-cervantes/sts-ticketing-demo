@@ -584,6 +584,29 @@ That is why this app feels structured instead of "controller soup."
 
 ## §3 Validation — Form Requests
 
+### NestJS translation first
+
+If you think in NestJS, a Laravel Form Request is closest to this bundle of
+responsibilities:
+
+- DTO shape definition
+- validation pipe
+- optional pre-validation transform/normalization step
+
+The difference is that Laravel does **not** usually put validation decorators on
+the DTO/class itself. Instead, it creates a dedicated request object that the
+framework resolves before your controller method body runs.
+
+That means this:
+
+```php
+public function store(StoreIssueRequest $request)
+```
+
+is not just a typed parameter. It is a contract saying:
+
+> "Laravel, please normalize this input, validate it, and only then enter the controller."
+
 ### Why not validate in the controller?
 
 The naive approach is:
@@ -605,6 +628,16 @@ This works but has problems:
 - The same rules cannot be reused across multiple endpoints.
 - The controller method grows as rules grow.
 - Testing validation in isolation requires booting the whole controller.
+
+It also makes it harder to answer architectural questions like:
+
+- what exactly is accepted on create vs update?
+- where is input trimmed?
+- which fields are optional vs nullable?
+- which errors are framework-native vs business-rule errors?
+
+In a disciplined Laravel app, validation should be one of the easiest things to
+find. This project follows that rule.
 
 ### The Form Request pattern
 
@@ -640,6 +673,11 @@ class StoreIssueRequest extends FormRequest
 }
 ```
 
+The critical architectural point is that the request class owns **input
+correctness**, not **business permission** and not **workflow side effects**.
+
+That separation is the whole reason Form Requests are valuable.
+
 **Three things to notice:**
 
 1. **`Rule::enum(Priority::class)`** — Laravel 9+ ships with a rule that
@@ -655,6 +693,248 @@ class StoreIssueRequest extends FormRequest
    is a **Laravel-native hook**, invoked automatically when the Form Request is
    resolved.
 
+### What `rules()` is really doing
+
+When Laravel resolves a Form Request, it calls `rules()` and builds a validator
+ from the returned array. Each key maps to an input field; each value is a list
+ of constraints.
+
+Example:
+
+```php
+'priority' => ['required', 'string', Rule::enum(Priority::class)],
+```
+
+This means:
+
+1. the field must exist (`required`)
+2. it must be a string (`string`)
+3. it must map to one of the `Priority` enum cases (`Rule::enum(...)`)
+
+That is already more expressive than many manual validator implementations. It
+is also **declarative** — you read the rule list and know the contract.
+
+### `sometimes` vs `nullable` — extremely important small detail
+
+This project uses combinations like:
+
+```php
+'visibility' => ['sometimes', 'nullable', 'string', Rule::enum(Visibility::class)],
+```
+
+These words mean different things:
+
+- **`sometimes`** = validate this field only if it is present in the payload
+- **`nullable`** = if it is present, `null` is allowed
+
+That distinction matters a lot in update endpoints.
+
+For example, in `UpdateIssueRequest`:
+
+```php
+'title' => ['sometimes', 'nullable', 'string', 'max:255'],
+```
+
+This allows three different client behaviors:
+
+1. omit `title` entirely -> do not change it
+2. include `title` with a string -> validate and update it
+3. include `title` with `null` -> accepted by validation, but later service
+   logic may decide how nulls are handled
+
+**NestJS comparison:** this is similar to the distinction between optional DTO
+properties and nullable values in a PATCH route.
+
+### `prepareForValidation()` is an architectural boundary, not just a helper
+
+This project trims strings before validation:
+
+```php
+if ($this->has('title')) {
+    $this->merge(['title' => trim((string) $this->input('title'))]);
+}
+```
+
+Why is this good?
+
+Because it makes validation rules operate on **normalized input** instead of raw
+browser payloads.
+
+That has several benefits:
+
+- whitespace-only user mistakes get corrected early
+- service layer can trust the incoming data more
+- tests become simpler because normalization happens in one place
+- controllers do not repeat trimming logic
+
+This is the Laravel equivalent of a transform layer before your Nest validation
+pipe or DTO processing.
+
+### Validation knows the database when appropriate
+
+This rule appears in `StoreIssueRequest`:
+
+```php
+'category_id' => ['required', 'integer', 'exists:categories,id'],
+```
+
+This is worth pausing on.
+
+Laravel validation is not limited to type/shape checks. It can also verify
+referential correctness against the database.
+
+That means the request layer can reject obviously invalid foreign keys before
+business logic runs.
+
+**Why that is good architecture:**
+
+- the service does not need to manually query for category existence just to
+  produce a user-facing validation error
+- the API contract remains explicit
+- validation errors stay 422 instead of becoming ad hoc controller logic
+
+### Why `authorize()` returns `true` here
+
+Notice again:
+
+```php
+public function authorize(): bool
+{
+    return true;
+}
+```
+
+A Laravel learner often asks: if Form Requests support authorization, why is it
+always true here?
+
+Because this project intentionally separates two concerns:
+
+- **Form Request** = “Is the payload structurally valid?”
+- **Policy** = “May this user do this action?”
+
+That split is especially useful in this app because authorization is not simple.
+Issue access depends on:
+
+- ownership
+- visibility
+- issue shares
+- permission ladder (`view -> comment -> edit`)
+
+That belongs in `IssuePolicy`, not in a request class.
+
+**NestJS comparison:** if you put both DTO validation and access-control logic
+inside one pipe/decorator layer, the concerns blur. This project chooses the
+cleaner separation.
+
+### Store vs Update requests teach you endpoint semantics
+
+Compare:
+
+- `StoreIssueRequest.php`
+- `UpdateIssueRequest.php`
+
+This is one of the best educational seams in the project.
+
+#### Create (`StoreIssueRequest`)
+
+Uses rules like:
+
+- `required`
+- `exists:...`
+- `after:now`
+
+Because a create endpoint defines the full minimum valid object.
+
+#### Update (`UpdateIssueRequest`)
+
+Uses rules like:
+
+- `updated_at` is required
+- most business fields are `sometimes|nullable`
+
+Because update endpoints have different semantics:
+
+- they patch an existing object
+- they support partial changes
+- they must participate in optimistic locking
+
+This difference is not incidental. It teaches an important API design lesson:
+
+> **Create validation defines object birth. Update validation defines legal mutation.**
+
+### Why `updated_at` is required on update
+
+In `UpdateIssueRequest`:
+
+```php
+'updated_at' => ['required', 'date'],
+```
+
+This is not a normal CRUD rule. It exists because the project implements
+**optimistic locking** in `IssueService::update()`.
+
+The client must send the timestamp it last saw. The service compares that to the
+current DB timestamp. If they differ, the update is rejected with **409
+Conflict**.
+
+So the request layer validates that the field exists and is a date, and the
+service layer decides whether the value is still current.
+
+That is a beautiful separation of responsibilities:
+
+- request validates shape
+- service validates concurrency semantics
+
+### Validation vs business rules — where is the line?
+
+This is one of the most important architecture instincts to develop.
+
+#### Belongs in Form Request
+
+- required vs optional fields
+- string/integer/date shape
+- enum membership
+- foreign-key existence
+- simple temporal validity like `after:now`
+- normalization like trimming
+
+#### Does **not** belong in Form Request
+
+- ownership checks
+- permission ladder logic
+- summary regeneration side effects
+- optimistic lock conflict decisions
+- whether a field change should enqueue a job
+
+Those belong in policies, services, jobs, or models.
+
+### What error shape should you expect from this layer?
+
+When Form Request validation fails, Laravel returns **422** with a structured
+error payload. That is framework-native behavior.
+
+Architecturally, this is good because callers can distinguish:
+
+- **422** = malformed or invalid input
+- **403** = not allowed
+- **409** = valid input, but stale state conflict
+
+That clarity is a sign of good HTTP architecture.
+
+### Why this project's validation style is strong
+
+This repo follows several good practices here:
+
+1. validation classes are easy to find
+2. create and update semantics are separated
+3. enums are validated against actual enum types
+4. database-aware validation is used where appropriate
+5. normalization happens before rule execution
+6. authorization is intentionally kept elsewhere
+
+For a Laravel learner, that is much better than learning from a controller-heavy
+codebase.
+
 ### The `authorize()` method in Form Requests
 
 Notice `StoreIssueRequest::authorize()` returns `true`. This is a deliberate
@@ -663,6 +943,21 @@ the Policy, not in the Form Request. Some teams use Form Request authorization
 for simpler apps, but separating validation from authorization is cleaner when
 the auth rules are complex (as they are here, with the sharing permission
 ladder).
+
+### A NestJS cross-check for your intuition
+
+If you want a quick translation table for this section:
+
+| Laravel Form Request concern | Rough NestJS analogue |
+|---|---|
+| `rules()` | validation decorators / schema rules |
+| `prepareForValidation()` | transform pipe / preprocessing step |
+| `authorize()` | sometimes guard-ish, but intentionally unused here |
+| automatic 422 response | validation pipe throwing structured HTTP error |
+| separate `Store...` / `Update...` classes | create DTO vs patch DTO |
+
+The biggest difference is that Laravel bundles this into a request object that
+the framework resolves around the route lifecycle.
 
 ### Reading exercise for §3
 
@@ -675,6 +970,17 @@ ladder).
 3. Why is `deadline_at` validated as `'after:now'` on creation but what would
    happen if a user tried to set a deadline in the past? Test your reasoning by
    finding the matching test in `tests/Feature/`.
+4. Make a two-column note for yourself:
+
+   - **Request-layer concerns**
+   - **Policy/service-layer concerns**
+
+   Then place each of these into the correct column: `Rule::enum`, share
+   permission ladder, `updated_at` date format, optimistic locking conflict,
+   trimming title, owner-only delete.
+5. Optional: compare `StoreCategoryRequest` and `StoreCommentRequest` to
+   `StoreIssueRequest`. Notice how the same pattern scales across multiple
+   features without inventing new validation architecture each time.
 
 ---
 
