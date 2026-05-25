@@ -93,7 +93,10 @@ class AiSettingsController extends Controller
 
             $settings->provider = $preset['provider'];
             $settings->base_url = $preset['base_url'] ?: null;
-            $settings->model = $preset['model'] ?: null;
+            // Allow an optional model override — if not provided (or null), use the preset default.
+            $settings->model = (isset($validated['model']) && $validated['model'] !== '')
+                ? $validated['model']
+                : ($preset['model'] ?: null);
             $settings->api_key = $preset['api_key'];
             $settings->active_preset = $validated['preset'];
             $settings->updated_by = $request->user()->id;
@@ -192,11 +195,36 @@ class AiSettingsController extends Controller
     {
         $settings = AiSetting::current();
 
-        // Allow temporary overrides from the request body (test-before-save).
-        $overrideProvider = $request->input('provider', $settings->provider);
-        $overrideBaseUrl = $request->input('base_url', $settings->effective_base_url);
-        $overrideApiKey = $request->input('api_key', $settings->api_key);
-        $overrideModel = $request->input('model', $settings->model);
+        // ── Preset shorthand ─────────────────────────────────────────────────
+        // When the frontend sends { preset: "openrouter" }, resolve the preset
+        // config and use its values as overrides — identical to how update() works,
+        // but without persisting anything.
+        if ($request->filled('preset')) {
+            $presetKey = $request->input('preset');
+
+            /** @var array{label:string,description:string,provider:string,base_url:string,model:string,api_key:string|null}|null $preset */
+            $preset = config('ai-presets.'.$presetKey);
+
+            if ($preset === null) {
+                return response()->json(['error' => 'Unknown preset: '.$presetKey], 422);
+            }
+
+            if (empty($preset['api_key'])) {
+                return response()->json(['error' => 'Preset "'.$presetKey.'" has no API key configured on this server.'], 422);
+            }
+
+            $overrideProvider = $preset['provider'];
+            $overrideBaseUrl = $preset['base_url'] ?: $settings->effective_base_url;
+            $overrideApiKey = $preset['api_key'];
+            // Allow a model override from the request body (same as update()).
+            $overrideModel = $request->filled('model') ? $request->input('model') : ($preset['model'] ?: $settings->model);
+        } else {
+            // Allow temporary overrides from the request body (test-before-save).
+            $overrideProvider = $request->input('provider', $settings->provider);
+            $overrideBaseUrl = $request->input('base_url', $settings->effective_base_url);
+            $overrideApiKey = $request->input('api_key', $settings->api_key);
+            $overrideModel = $request->input('model', $settings->model);
+        }
 
         $effectiveDriver = $overrideProvider === 'rules' ? 'rules' : 'llm';
 

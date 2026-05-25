@@ -112,6 +112,10 @@ const selectedProvider = ref<'rules' | 'openrouter' | 'ollama' | 'custom'>('rule
 const selectedBaseUrl = ref('')
 const selectedModel = ref('')
 
+// Preset model override — pre-filled with the preset's default, editable by the user.
+// Empty string means "use the preset default" — only sent to the server when changed.
+const presetModelOverride = ref('')
+
 // Models list from OpenRouter
 const openRouterModels = ref<OpenRouterModel[]>([])
 const modelsLoading = ref(false)
@@ -205,6 +209,8 @@ async function loadSettings(): Promise<void> {
     // Determine selection mode from saved state
     if (resp.data.active_preset) {
       selectionMode.value = `preset:${resp.data.active_preset}`
+      // Pre-fill model override with the currently saved model (which may already be overridden).
+      presetModelOverride.value = resp.data.model ?? ''
     } else if (resp.data.provider === 'rules') {
       selectionMode.value = 'rules'
     } else {
@@ -242,6 +248,9 @@ async function loadOpenRouterModels(): Promise<void> {
 function selectPreset(presetKey: string): void {
   selectionMode.value = `preset:${presetKey}`
   testResult.value = null
+  // Pre-fill with the preset's default model so the user can see and optionally change it.
+  const preset = availablePresets.value.find((p) => p.key === presetKey)
+  presetModelOverride.value = preset?.model ?? ''
 }
 
 function onModeChange(value: string | number | bigint | Record<string, unknown> | null): void {
@@ -291,8 +300,13 @@ async function save(): Promise<void> {
     let body: Record<string, unknown>
 
     if (isPresetMode.value && activePresetKey.value) {
-      // Preset mode — one-click, server resolves everything
+      // Preset mode — server resolves provider/base_url/api_key from config.
+      // Include the model if the user changed it from the preset default.
+      const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
       body = { preset: activePresetKey.value }
+      if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
+        body.model = presetModelOverride.value
+      }
     } else if (selectionMode.value === 'rules') {
       body = { provider: 'rules' }
     } else {
@@ -339,19 +353,26 @@ async function testConnection(): Promise<void> {
   testResult.value = null
 
   try {
-    // For presets, we test against the currently saved configuration.
-    // For custom mode, we may include unsaved overrides.
+    // Build the test body. For preset mode, send the preset key so the server
+    // resolves the correct provider/api_key server-side (test-before-save).
     const body: Record<string, unknown> = {}
 
-    if (!isPresetMode.value && selectionMode.value !== 'rules') {
+    if (isPresetMode.value && activePresetKey.value) {
+      body.preset = activePresetKey.value
+      // Include model override if the user changed it from the preset default.
+      const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
+      if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
+        body.model = presetModelOverride.value
+      }
+    } else if (selectionMode.value === 'rules') {
+      body.provider = 'rules'
+    } else {
+      // Custom mode — include unsaved field overrides.
       body.provider = selectedProvider.value
       if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
       if (selectedModel.value) body.model = selectedModel.value
       if (newApiKey.value.trim()) body.api_key = newApiKey.value.trim()
-    } else if (selectionMode.value === 'rules') {
-      body.provider = 'rules'
     }
-    // For preset mode: empty body → server uses saved DB config (the preset's actual key)
 
     const res = await fetch('/api/settings/ai/test', {
       method: 'POST',
@@ -551,16 +572,32 @@ function formatContext(length: number): string {
         <CardContent class="pt-5 pb-4 px-5">
           <div class="flex items-start gap-3">
             <CheckCircle2Icon class="mt-0.5 size-4 shrink-0 text-primary" />
-            <div>
+            <div class="flex-1 min-w-0">
               <template v-for="preset in availablePresets" :key="preset.key">
                 <template v-if="preset.key === activePresetKey">
                   <p class="text-sm font-medium text-foreground">
                     {{ preset.label }} <span class="font-normal text-muted-foreground">(pre-configured)</span>
                   </p>
-                  <p class="mt-0.5 text-xs text-muted-foreground font-mono">Model: {{ preset.model }}</p>
                   <p class="mt-1 text-xs text-muted-foreground">
                     API key is managed server-side — no key entry required.
                   </p>
+                  <!-- Editable model override -->
+                  <div class="mt-3 space-y-1.5">
+                    <Label for="preset-model-override" class="text-xs font-medium text-foreground">
+                      Model
+                      <span class="ml-1 font-normal text-muted-foreground">(default: {{ preset.model }})</span>
+                    </Label>
+                    <Input
+                      id="preset-model-override"
+                      v-model="presetModelOverride"
+                      type="text"
+                      :placeholder="preset.model"
+                      class="h-8 font-mono text-xs bg-background"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      Leave as-is to use the preset default, or type a different model ID to override.
+                    </p>
+                  </div>
                 </template>
               </template>
             </div>

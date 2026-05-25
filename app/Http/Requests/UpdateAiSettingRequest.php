@@ -39,9 +39,12 @@ class UpdateAiSettingRequest extends FormRequest
     {
         // When a preset is provided, provider and other fields are optional
         // (they are resolved server-side from the preset config).
+        // An optional model override is allowed so users can change the model
+        // without switching away from the preset.
         if ($this->has('preset')) {
             return [
                 'preset' => ['required', 'string', 'max:100'],
+                'model' => ['sometimes', 'nullable', 'string', 'max:255'],
             ];
         }
 
