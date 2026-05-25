@@ -986,6 +986,27 @@ the framework resolves around the route lifecycle.
 
 ## §4 Authorization — Policies
 
+### NestJS translation first
+
+If your auth intuition comes from NestJS, Laravel Policies are closest to an
+**ability-based authorization layer** that sits alongside guards.
+
+Rough translation:
+
+| Laravel | Rough NestJS analogue |
+|---|---|
+| `auth` middleware | auth guard |
+| `$this->authorize('update', $issue)` | ability check after authentication |
+| `IssuePolicy` | CASL-style ability rules / dedicated authorization service |
+| `viewAny`, `view`, `update`, `delete` | per-action authorization decisions |
+
+The important difference is that Laravel Policies are usually **model-centric**.
+Instead of asking only “does this user have permission X?”, Laravel often asks:
+
+> “May this user perform action Y on this specific model instance?”
+
+That mindset becomes very natural once you see it in code.
+
 ### The problem with authorization in controllers
 
 If authorization logic were in the controller, it would look like:
@@ -1009,6 +1030,15 @@ public function update(Request $request, Issue $issue)
 
 This spreads the same logic across every method, and worse, the logic becomes
 *invisible* — you cannot look at authorization as a whole anywhere.
+
+It also creates a second problem: controller methods start mixing transport
+concerns with domain access rules. Then you can no longer answer questions like:
+
+- who can view a public issue?
+- who can comment on a shared issue?
+- does owner access override share access?
+
+without scanning multiple endpoints.
 
 ### The Policy pattern
 
@@ -1038,6 +1068,282 @@ public function update(User $user, Issue $issue): bool
    `$share->permission === 'edit'`. This is important: if we ever rename a
    permission level, we change the Enum, and the Policy automatically reflects
    it.
+
+### Policy methods correspond to user intents
+
+Look at the methods in `IssuePolicy`:
+
+- `viewAny`
+- `view`
+- `create`
+- `update`
+- `comment`
+- `delete`
+- `share`
+- `restore`
+- `forceDelete`
+
+These are not arbitrary names. They model the actual intents the application
+cares about.
+
+That means the policy layer is not just “security glue.” It is also a compact
+map of the app's domain actions.
+
+### `viewAny` vs `view` — subtle and important
+
+This is one of the easiest places for a beginner to get confused.
+
+In `IssuePolicy`:
+
+```php
+public function viewAny(User $user): bool
+{
+    return true;
+}
+```
+
+That does **not** mean every user can view every issue.
+
+It means:
+
+> every authenticated user may access the **listing endpoint itself**.
+
+The actual row-level filtering happens in the query scope:
+
+```php
+->accessibleBy($request->user())
+```
+
+inside `IssueController@index()`.
+
+This is a great design choice. It separates:
+
+- **endpoint access** (`viewAny`)
+- **record visibility** (`scopeAccessibleBy`)
+
+If those were collapsed into a single layer, the intent would be harder to
+read.
+
+**NestJS comparison:** imagine a guard that allows entry to `/issues`, but the
+service/repository layer filters records based on the authenticated user. Same
+idea.
+
+### The actual access model in this app
+
+This project does not use roles like:
+
+- admin
+- manager
+- agent
+
+Instead it uses a **per-issue access model** with three inputs:
+
+1. **Ownership** — the creator owns the issue
+2. **Visibility** — an issue can be public or private
+3. **Shares** — an issue may be shared to another user with a permission level
+
+This means access is contextual and object-specific.
+
+That is why policies are such a good fit here.
+
+### `view()` shows the full access resolution clearly
+
+From `IssuePolicy::view()`:
+
+```php
+if ($issue->user_id === $user->id) {
+    return true;
+}
+
+if ($this->getShare($user, $issue) !== null) {
+    return true;
+}
+
+if ($issue->visibility === Visibility::Public) {
+    return true;
+}
+
+return false;
+```
+
+This is compact, but it teaches a lot:
+
+- owner access is first-class
+- any share row grants view access
+- public visibility grants view access even without sharing
+- default is deny
+
+That last point matters. The policy is permissive only through explicit rules;
+otherwise it returns false.
+
+### `update()` and `comment()` depend on the permission ladder
+
+The project's permission system is not role-based. It is **ladderized**:
+
+```text
+view -> comment -> edit
+```
+
+That means each higher permission implies the lower ones.
+
+`IssuePolicy::update()`:
+
+```php
+return $share !== null && $share->permission->canEdit();
+```
+
+`IssuePolicy::comment()`:
+
+```php
+return $share !== null && $share->permission->canComment();
+```
+
+And the enum methods in `Permission` hold the actual ladder logic.
+
+This is elegant because the policy asks a semantic question:
+
+- `canEdit()`
+- `canComment()`
+
+instead of hardcoding permission strings repeatedly.
+
+### Why this is better than role-based thinking for this app
+
+If you come from Nest apps with role guards, it is tempting to ask:
+
+> Why not just make roles like `owner`, `viewer`, `editor`?
+
+Because in this app those are not global user roles. They are **issue-specific
+relationships**.
+
+The same user can be:
+
+- owner of issue A
+- commenter on issue B
+- viewer of issue C
+- no-access user for issue D
+
+That is exactly the kind of case where object-level policies beat simple role
+guards.
+
+### The private helper is a nice small design detail
+
+At the bottom of `IssuePolicy`:
+
+```php
+private function getShare(User $user, Issue $issue): ?IssueShare
+{
+    return $issue->shares()->where('user_id', $user->id)->first();
+}
+```
+
+This is a small but good detail:
+
+- the share lookup is centralized
+- repeated query fragments are removed
+- policy methods stay easier to scan
+
+This is not a huge pattern, but it is an example of disciplined local design.
+
+### Where the policy is actually used
+
+The policy does nothing unless the app calls it.
+
+Examples from controllers:
+
+```php
+$this->authorize('viewAny', Issue::class);
+$this->authorize('create', Issue::class);
+$this->authorize('view', $issue);
+$this->authorize('update', $issue);
+$this->authorize('delete', $issue);
+```
+
+That means the request lifecycle is:
+
+1. route/middleware authenticates the user
+2. controller calls `authorize(...)`
+3. Laravel dispatches that to the policy
+4. failure becomes **403 Forbidden** automatically
+
+This is very Laravel-native and worth internalizing.
+
+### Policy vs middleware vs query scope
+
+Laravel learners often blur these three. Do not.
+
+#### Middleware answers:
+- is the request allowed into this route pipeline at all?
+
+Example: `auth`
+
+#### Policy answers:
+- may this user perform this action on this model?
+
+Example: update this issue, comment on this issue
+
+#### Query scope answers:
+- which records should even be returned from the DB query?
+
+Example: `accessibleBy($user)`
+
+This app uses all three correctly and separately.
+
+### Why this policy layer is strong Laravel design
+
+This project's authorization is good because:
+
+1. it is centralized
+2. it is model-aware
+3. it is enum-backed
+4. it separates endpoint access from record filtering
+5. it avoids controller duplication
+6. it matches the app's real domain (issue-level sharing)
+
+That is much better than slapping role checks across controllers.
+
+### Common mistakes this project avoids
+
+It avoids several classic mistakes:
+
+- **No inline ownership checks everywhere**
+- **No frontend-only authorization assumptions**
+- **No role system forced onto an object-specific permission problem**
+- **No mixing of validation and authorization**
+- **No giant `if/else` authorization blocks in controllers**
+
+As a learner, these absences are as educational as the code that is present.
+
+### NestJS comparison — the cleanest mapping
+
+If you want a compact translation:
+
+| Concern | NestJS-ish interpretation |
+|---|---|
+| route `auth` middleware | authentication guard |
+| `IssuePolicy` | ability evaluator / authorization service |
+| `$this->authorize('update', $issue)` | ability check on a concrete domain object |
+| `accessibleBy($user)` scope | repository/service-level record filtering |
+| `Permission` enum methods | typed permission vocabulary |
+
+The most important difference is that Laravel makes model-oriented policy files
+a first-class convention, while many Nest projects invent their own pattern for
+this.
+
+### Reading exercise for §4
+
+1. Open `IssuePolicy::view()`, `update()`, and `comment()` side by side. Write a
+   one-sentence rule for each in plain English.
+2. Open `app/Enums/Permission.php`. Explain why `canComment()` returning true
+   for both `Comment` and `Edit` is an example of the permission ladder.
+3. Find where `IssueController@index()` uses `viewAny` and where it also uses
+   `accessibleBy($request->user())`. Why are both needed?
+4. Compare this authorization model to a simple role-based system (`admin`,
+   `user`). Which project requirements would be harder to express with only
+   roles?
+5. Optional: inspect `CommentPolicy.php` and compare its style to
+   `IssuePolicy.php`. Notice whether the project keeps a consistent authorization
+   approach across domain objects.
 
 3. **Private helper `getShare()`** — the share lookup is extracted into a
    private method so each policy method calls it in one line rather than
