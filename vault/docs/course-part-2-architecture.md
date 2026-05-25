@@ -31,6 +31,41 @@
 5. Iterate with a tutor or reviewer one section at a time; do not try to read
    everything in one sitting.
 
+### Reference Frame for NestJS Developers
+
+If your strongest backend reference is **NestJS**, use this translation layer
+while reading the project:
+
+| Laravel concept | Rough NestJS equivalent | Important difference |
+|---|---|---|
+| `routes/*.php` | controller route decorators / module route wiring | Laravel routing is more file-driven and less module-centric |
+| Controller | Controller | Similar orchestration role |
+| Form Request | DTO + `class-validator` pipe | Laravel validation is usually a dedicated request class, not decorators on DTOs |
+| Policy | Guard + ability/permission layer | Laravel policies are model-oriented and usually called inside controllers |
+| Service class | Provider / service | Similar role, but Laravel does not force provider/module structure for every service |
+| Eloquent Model | TypeORM/Prisma model entity concept | Eloquent is Active Record, not repository-first |
+| Provider | Module/provider registration | Laravel providers are app bootstrap units, not feature modules |
+| Job / Queue | Bull queue processor / background worker | Laravel jobs are framework-native and serializable by convention |
+| Resource | response mapper / serializer / presenter | Explicit API response shaping layer |
+| Facade | static helper over DI token | More common and idiomatic in Laravel than in Nest |
+| Middleware | middleware | Similar concept |
+| Event | event emitter event | Similar concept |
+
+The biggest mindset shift is this:
+
+> **NestJS pushes you to think in modules. Laravel pushes you to think in request lifecycle + domain boundaries.**
+
+So while Nest often starts with `IssueModule`, Laravel often starts with:
+
+- route
+- request validation
+- policy
+- controller
+- service
+- model
+
+Same architectural concerns, different default organizing principle.
+
 ---
 
 ## Recommended Study Order
