@@ -1395,6 +1395,35 @@ rows you see. These are two different security layers with two different jobs.
 
 ## §5 The Eloquent Model Layer
 
+### NestJS translation first
+
+If your ORM background is more NestJS-flavored, especially with TypeORM or
+Prisma, the biggest mental shift is this:
+
+> **Eloquent is Active Record, not repository-first.**
+
+That means the model class is not only a schema representation. It also owns:
+
+- relationships
+- query scopes
+- attribute casting
+- lifecycle hooks
+- small domain-adjacent behavior
+
+Rough mapping:
+
+| Laravel Eloquent concept | Rough NestJS analogue | Important difference |
+|---|---|---|
+| Model class | Entity / Prisma model concept | Eloquent carries richer behavior directly on the model |
+| Relationship method | ORM relation metadata | Expressed as methods, not decorators/schema files |
+| Scope | reusable query helper / repository filter method | Lives on the model class itself |
+| `casts()` | serialization/type mapping layer | Automatic on model hydration |
+| `booted()` model event | entity subscriber / lifecycle hook | Common and idiomatic in Laravel models |
+| `Issue::create()` | repository create / ORM insert | Active Record style |
+
+If you prefer repository-driven architecture, Laravel can do that — but this
+project intentionally uses Eloquent in its native style.
+
 ### What Eloquent is (and what it isn't)
 
 Eloquent implements the **Active Record** pattern: each model class represents
@@ -1407,6 +1436,15 @@ a database table, and each model instance represents a row. It bundles:
 
 This is **entirely Laravel-native**. Everything in this section is provided by
 `Illuminate\Database\Eloquent\Model`.
+
+What Eloquent is **not** in this project:
+
+- not a repository abstraction hidden behind interfaces
+- not an anemic data class with all logic elsewhere
+- not just a direct DB row mapper
+
+This project uses a healthy middle ground: the model owns model-shaped logic,
+while larger workflows still live in services and jobs.
 
 ### The Issue model — a deep read
 
@@ -1433,6 +1471,10 @@ against mass-assignment for security.
 send `user_id: 999` in a POST body and Eloquent would set it — bypassing
 ownership. The `Fillable` list is the explicit whitelist.
 
+**NestJS comparison:** imagine explicitly whitelisting which DTO properties may
+be used to construct/update an entity rather than trusting every incoming field.
+Laravel bakes that concern into the model layer.
+
 #### 2. Traits
 
 ```php
@@ -1444,6 +1486,10 @@ use HasFactory, SoftDeletes;
 - **`SoftDeletes`** — Laravel-native. Adds `deleted_at` column logic: deleted
   rows are not truly removed from the database; they get a timestamp in
   `deleted_at` and are excluded from normal queries automatically.
+
+This is an example of Laravel giving you business-friendly persistence behavior
+without forcing you to hand-roll archive flags or duplicate “active only”
+filters everywhere.
 
 #### 3. Casting
 
@@ -1472,6 +1518,20 @@ Casting is **Laravel-native** and very powerful. It means:
 The benefit: application code never needs to parse strings or integers from the
 DB. Types are correct at the model boundary.
 
+This is more important than it looks.
+
+Once casting is configured, the rest of your app can think in domain terms:
+
+- `Priority::High`
+- `Status::Resolved`
+- `CarbonImmutable`
+- `bool`
+
+instead of raw storage primitives.
+
+That means the model layer acts as a **type firewall** between the database and
+the rest of the application.
+
 #### 4. The `booted()` event hook — a critical custom pattern
 
 ```php
@@ -1496,6 +1556,13 @@ recomputed when the issue is saved — by any code path, not just the service.
   command, or a test, the flag is always correct.
 - It is database-agnostic — it fires at the PHP level, not via a DB trigger.
 
+This is one of the best examples in the project of putting logic at the lowest
+reliable layer that still keeps it understandable.
+
+If this logic lived only in `IssueService`, then any future code path that saves
+an `Issue` outside the service could accidentally skip recomputation. By putting
+it in the model's `saving` event, the project makes correctness harder to break.
+
 Compare with the `Category` model's `creating` event:
 
 ```php
@@ -1507,6 +1574,14 @@ static::creating(function (Category $category): void {
 
 Same pattern, different event: `creating` fires only on insert (not on updates),
 which is correct for slugs (you set them once at creation).
+
+That contrast is worth learning:
+
+- use **`creating`** when the rule belongs only to first-time creation
+- use **`saving`** when the rule must hold for both create and update
+
+Laravel model events are easy to misuse, but here they are used with good
+discipline.
 
 #### 5. Relationships
 
@@ -1522,6 +1597,29 @@ connect. They are used for:
 - Eager loading (`$issue->load('category')` — prevents N+1 queries)
 - Lazy loading (`$issue->comments` — loads when accessed)
 - Relationship queries (`$issue->shares()->where('user_id', $id)->first()`)
+
+### Why relationships matter architecturally
+
+Relationships are not just ORM convenience. They become the **vocabulary of the
+domain model**.
+
+For example, saying:
+
+```php
+$issue->shares()
+```
+
+is much clearer than manually writing a raw query against `issue_shares` every
+time. The relationship defines a stable semantic boundary.
+
+It also allows the rest of the system to speak in model terms:
+
+- controller eager-loads relationships
+- policy queries shares through the relationship
+- resource serializes related models
+- tests can reason about ownership and comments naturally
+
+This is one of Eloquent's biggest strengths when used well.
 
 #### 6. Query scopes — composable filtering
 
@@ -1548,6 +1646,10 @@ Issue::query()->filterByStatus($request->query('status'))
 - Each scope is individually testable.
 - Scopes silently ignore null or invalid inputs, keeping the caller clean.
 
+For a NestJS developer, scopes are closest to “small reusable repository query
+fragments,” except Laravel keeps them on the model class rather than in a
+repository object.
+
 Look at `scopeFilterByStatus`:
 
 ```php
@@ -1565,6 +1667,14 @@ public function scopeFilterByStatus(Builder $query, ?string $value): Builder
 `Status::tryFrom()` is a PHP 8.1+ enum method that returns `null` for unknown
 values instead of throwing. This is **safe input handling**: invalid filter
 values are silently ignored rather than surfacing an error to the user.
+
+That is a subtle UX/API choice. The project treats list filters differently from
+mutations:
+
+- invalid create/update payloads -> error (422)
+- invalid optional filters -> no-op
+
+That is an intentional design distinction.
 
 ### The `computeNeedsAttention` method — pure static logic
 
@@ -1589,6 +1699,102 @@ output without any framework machinery. This is a **deliberate custom
 architecture choice**: pulling the computation out of the event hook into a
 named, testable static method.
 
+### Why this model is “healthy” instead of a god model
+
+As a learner, you should ask whether the model is too fat.
+
+`Issue.php` is doing quite a bit, but it is still healthy because its
+responsibilities are coherent:
+
+- describe persistence shape
+- define relationships
+- define casts
+- define query scopes
+- maintain a derived attribute (`needs_attention`)
+- provide a pure domain helper used by the event hook
+
+What it is **not** doing:
+
+- no HTTP request handling
+- no authorization decisions
+- no queue dispatching
+- no AI generation workflow
+- no response serialization concerns
+
+That boundary is what keeps it from becoming a “god model.”
+
+### Where this project stops before over-abstracting
+
+Some teams react to Active Record by overcorrecting into repositories for every
+query. This repo does not do that.
+
+Why that is a good decision here:
+
+- Eloquent already expresses the domain clearly
+- the query logic is still understandable
+- there is no evidence of repository duplication pressure yet
+- model scopes already provide good reuse points
+
+In other words: this project uses Eloquent idiomatically rather than fighting
+it with architecture imported from another ecosystem.
+
+### Framework-native vs custom in this model layer
+
+It helps to separate what Laravel gives you from what the project chose.
+
+#### Laravel-native
+
+- `Model`
+- relationships (`belongsTo`, `hasMany`)
+- casts
+- soft deletes
+- model events
+- query scopes convention
+- factories
+
+#### Custom app architecture
+
+- which attributes are fillable
+- which derived value is recomputed on save
+- the specific `computeNeedsAttention()` rule
+- the meaning of `accessibleBy()` for this domain
+- enum choices for priority/status/visibility
+
+That distinction helps you avoid attributing everything to “Laravel magic.”
+
+### Small but important design detail: `accessibleBy()` belongs here
+
+`scopeAccessibleBy()` is one of the most important model methods in the app.
+
+Why does it belong on the model?
+
+Because it describes **how issue visibility works as a query concern**.
+
+It is not:
+
+- HTTP logic
+- UI logic
+- service workflow logic
+
+It is specifically “how to constrain an `Issue` query for a given user.” That
+is model-level behavior.
+
+That is a great example of putting logic at the right layer.
+
+### Reading the model with the right questions
+
+When you read an Eloquent model like `Issue`, ask these in order:
+
+1. What table/entity does it represent?
+2. Which fields are protected/fillable?
+3. Which attributes are cast into richer PHP types?
+4. Which relationships define its domain neighborhood?
+5. Which scopes define reusable query language?
+6. Which lifecycle hooks enforce invariants automatically?
+7. Which methods are pure logic vs side-effecting behavior?
+
+If you do that consistently, Eloquent models become much easier to understand.
+
 ### Reading exercise for §5
 
 1. Open `app/Models/Issue.php`. The `scopeAccessibleBy` method uses
@@ -1600,6 +1806,14 @@ named, testable static method.
    in methods that call `.addMinutes()`?)
 3. The `Category` model has `public const UPDATED_AT = null;`. What does this
    tell Laravel? Why would categories not need an `updated_at` timestamp?
+4. Open `IssueController@index()` and highlight every method in the query chain
+   that actually comes from the `Issue` model (`filterByStatus`,
+   `filterByPriority`, `filterByCategory`, `accessibleBy`). Explain why moving
+   those into the controller would make the code worse.
+5. Optional: compare Eloquent's style here with how you would model the same
+   entity in NestJS + Prisma or NestJS + TypeORM. What responsibilities would
+   likely move out of the model in those stacks, and what do you gain/lose by
+   doing that?
 
 ---
 
