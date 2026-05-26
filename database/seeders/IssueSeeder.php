@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Models\Category;
 use App\Models\Issue;
 use App\Models\User;

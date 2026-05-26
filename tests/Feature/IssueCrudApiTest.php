@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Enums\Visibility;
 use App\Jobs\GenerateSummaryJob;
 use App\Models\Category;
