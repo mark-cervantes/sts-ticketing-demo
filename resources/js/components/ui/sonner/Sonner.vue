@@ -13,7 +13,7 @@ import { Toaster as Sonner } from 'vue-sonner'
 <template>
   <Sonner
     class="toaster group"
-    position="top-right"
+    :position="'top-right'"
     :visible-toasts="4"
     :duration="5000"
     :offset="16"
