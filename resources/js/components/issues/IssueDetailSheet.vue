@@ -610,7 +610,7 @@ function handleFollowUpCreated(): void {
           <template v-if="summaryState === 'ready'">
             <Transition name="summary-reveal">
               <div :key="issue.summary ?? 'empty'">
-                <p class="text-sm leading-relaxed text-foreground">
+                <p class="whitespace-pre-line text-sm leading-relaxed text-foreground">
                   {{ issue.summary }}
                 </p>
                 <!-- Suggested action banner -->
