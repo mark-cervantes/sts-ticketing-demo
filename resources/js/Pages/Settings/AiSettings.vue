@@ -17,10 +17,12 @@ import {
   EyeOffIcon,
   LoaderIcon,
   Check,
+  ChevronDownIcon,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { apiFetch, getCsrfToken } from '@/composables/useApiFetch'
 import ModelCombobox from '@/components/settings/ModelCombobox.vue'
+import { Textarea } from '@/components/ui/textarea'
 
 defineOptions({ layout: AppLayout })
 
@@ -37,6 +39,10 @@ interface AiSettingsData {
   active_preset: string | null
   updated_by: { id: number; name: string } | null
   updated_at: string | null
+  system_prompt: string | null
+  user_prompt: string | null
+  default_system_prompt: string
+  default_user_prompt: string
 }
 
 interface AiPreset {
@@ -95,6 +101,11 @@ const modelsLoading = ref(false)
 
 // Test result
 const testResult = ref<TestResult | null>(null)
+
+// Prompt editor state
+const editedSystemPrompt = ref('')
+const editedUserPrompt = ref('')
+const showPromptEditor = ref(false)
 
 // ─────────────────────────────────────────────────────────────
 // Computed
@@ -180,6 +191,11 @@ async function loadSettings(): Promise<void> {
       selectedBaseUrl.value = resp.data.base_url ?? ''
       selectedModel.value = resp.data.model ?? ''
     }
+
+    // Initialize prompt editor state
+    editedSystemPrompt.value = resp.data.system_prompt ?? ''
+    editedUserPrompt.value = resp.data.user_prompt ?? ''
+
     // NOTE: models are now lazy-loaded on combobox open, not here.
   } catch {
     toast.error('Failed to load AI settings')
@@ -278,6 +294,10 @@ async function save(): Promise<void> {
         if (newApiKey.value.trim()) body.api_key = newApiKey.value.trim()
       }
     }
+
+    // Include prompt overrides (empty string = use default)
+    body.system_prompt = editedSystemPrompt.value.trim()
+    body.user_prompt = editedUserPrompt.value.trim()
 
     const res = await fetch('/api/settings/ai', {
       method: 'PUT',
@@ -733,6 +753,80 @@ async function testConnection(): Promise<void> {
           </div>
         </div>
       </div>
+
+      <!-- ── AI Behavior / Prompts ─────────────────────────────────────────── -->
+      <Card class="mb-4">
+        <CardHeader>
+          <button
+            type="button"
+            class="flex w-full items-center justify-between py-1 px-1"
+            @click="showPromptEditor = !showPromptEditor"
+          >
+            <div class="text-left">
+              <h2 class="text-sm font-semibold text-foreground">AI Behavior</h2>
+              <p class="text-xs text-muted-foreground">Customize how the AI synthesizes issues</p>
+            </div>
+            <ChevronDownIcon
+              class="size-4 text-muted-foreground transition-transform"
+              :class="{ 'rotate-180': showPromptEditor }"
+            />
+          </button>
+        </CardHeader>
+        <CardContent v-if="showPromptEditor" class="space-y-4">
+          <!-- System prompt -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <Label class="text-sm font-medium">System Prompt</Label>
+              <Button
+                v-if="editedSystemPrompt !== ''"
+                variant="ghost"
+                size="sm"
+                class="h-6 text-xs"
+                @click="editedSystemPrompt = ''"
+              >
+                Reset to default
+              </Button>
+            </div>
+            <Textarea
+              v-model="editedSystemPrompt"
+              :placeholder="currentSettings?.default_system_prompt ?? 'System prompt...'"
+              class="min-h-[120px] font-mono text-xs"
+            />
+            <p class="text-xs text-muted-foreground">
+              Leave empty to use the default prompt. This controls how the AI analyzes and synthesizes issues.
+            </p>
+          </div>
+
+          <!-- User prompt template -->
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <Label class="text-sm font-medium">User Prompt Template</Label>
+              <Button
+                v-if="editedUserPrompt !== ''"
+                variant="ghost"
+                size="sm"
+                class="h-6 text-xs"
+                @click="editedUserPrompt = ''"
+              >
+                Reset to default
+              </Button>
+            </div>
+            <Textarea
+              v-model="editedUserPrompt"
+              :placeholder="currentSettings?.default_user_prompt ?? 'User prompt template...'"
+              class="min-h-[100px] font-mono text-xs"
+            />
+            <p class="text-xs text-muted-foreground">
+              Available variables:
+              <code class="rounded bg-muted px-1">{{'{{'}}category{{'}}'}}</code>
+              <code class="rounded bg-muted px-1">{{'{{'}}priority{{'}}'}}</code>
+              <code class="rounded bg-muted px-1">{{'{{'}}title{{'}}'}}</code>
+              <code class="rounded bg-muted px-1">{{'{{'}}description{{'}}'}}</code>
+              <code class="rounded bg-muted px-1">{{'{{'}}comments{{'}}'}}</code>
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <!-- Action buttons -->
       <div class="flex items-center gap-3">
