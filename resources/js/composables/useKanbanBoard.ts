@@ -386,7 +386,8 @@ export function useKanbanBoard() {
       const responseData = (await response.json()) as { data: Issue }
       issue.updated_at = responseData.data.updated_at
 
-      toast.success(`Moved to ${toStatusObj.name}`)
+      // No success toast — moving a card is expected behavior.
+      // Only surface errors/failures (shown above).
     } catch {
       toast.error('Network error', {
         description: `Could not reach the server to move "${issue.title}". The card was reverted.`,
