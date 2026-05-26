@@ -46,6 +46,8 @@ import CommentThread from '@/components/issues/CommentThread.vue'
 import ShareSection from '@/components/issues/ShareSection.vue'
 import IssueChatPanel from '@/components/issues/IssueChatPanel.vue'
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   FlameIcon,
   MoreHorizontalIcon,
   Trash2Icon,
@@ -57,7 +59,8 @@ import {
   TicketPlusIcon,
 } from '@lucide/vue'
 import CreateIssueDialog from '@/components/issues/CreateIssueDialog.vue'
-import { apiPost } from '@/composables/useApiFetch'
+import { apiPatch, apiPost } from '@/composables/useApiFetch'
+import { useKanbanBoard } from '@/composables/useKanbanBoard'
 import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
 import {
@@ -319,6 +322,55 @@ async function handleRegenerate(): Promise<void> {
     toast.error('Network error')
   } finally {
     regenerating.value = false
+  }
+}
+
+// --- Archive / Unarchive ---
+
+const { loadInitial } = useKanbanBoard()
+const archiving = ref(false)
+const unarchiving = ref(false)
+
+async function handleArchive(): Promise<void> {
+  if (!issue.value || archiving.value) return
+  archiving.value = true
+  try {
+    const response = await apiPatch(`/api/issues/${issue.value.id}/archive`, {})
+    if (!response.ok) {
+      const body = (await response.json()) as { message?: string }
+      toast.error(body.message ?? 'Failed to archive issue.')
+      return
+    }
+    // Re-fetch issue so the detail sheet reflects updated archived_at
+    await fetchIssue(issue.value.id)
+    // Refresh the board — archived ticket disappears when showArchived is off
+    void loadInitial()
+  } catch {
+    toast.error('Network error — archive failed.')
+  } finally {
+    archiving.value = false
+  }
+}
+
+async function handleUnarchive(): Promise<void> {
+  if (!issue.value || unarchiving.value) return
+  unarchiving.value = true
+  try {
+    const response = await apiPatch(`/api/issues/${issue.value.id}/unarchive`, {})
+    if (!response.ok) {
+      const body = (await response.json()) as { message?: string }
+      toast.error(body.message ?? 'Failed to unarchive issue.')
+      return
+    }
+    // Re-fetch issue so the detail sheet reflects cleared archived_at
+    await fetchIssue(issue.value.id)
+    toast.success('Ticket restored to the board.')
+    // Refresh the board — ticket reappears
+    void loadInitial()
+  } catch {
+    toast.error('Network error — unarchive failed.')
+  } finally {
+    unarchiving.value = false
   }
 }
 
@@ -692,6 +744,42 @@ function handleFollowUpCreated(): void {
           </p>
           <p>Created {{ new Date(issue.created_at).toLocaleDateString() }}</p>
           <p>Last updated {{ new Date(issue.updated_at).toLocaleDateString() }}</p>
+          <p v-if="issue.archived_at" class="flex items-center gap-1">
+            <ArchiveIcon class="size-3" />
+            Archived {{ new Date(issue.archived_at).toLocaleDateString() }}
+          </p>
+        </div>
+
+        <!-- Archive / Unarchive actions -->
+        <div
+          v-if="issue.can?.archive"
+          class="flex gap-2 border-t border-border pt-3"
+        >
+          <!-- Archive: only for resolved, not-yet-archived tickets -->
+          <Button
+            v-if="!issue.archived_at && issue.status === 'resolved'"
+            variant="outline"
+            size="sm"
+            class="gap-1.5 text-muted-foreground hover:text-foreground"
+            :disabled="archiving"
+            @click="handleArchive"
+          >
+            <ArchiveIcon class="size-3.5" />
+            {{ archiving ? 'Archiving…' : 'Archive' }}
+          </Button>
+
+          <!-- Unarchive: only for archived tickets -->
+          <Button
+            v-if="issue.archived_at"
+            variant="outline"
+            size="sm"
+            class="gap-1.5 text-muted-foreground hover:text-foreground"
+            :disabled="unarchiving"
+            @click="handleUnarchive"
+          >
+            <ArchiveRestoreIcon class="size-3.5" />
+            {{ unarchiving ? 'Restoring…' : 'Unarchive' }}
+          </Button>
         </div>
       </div>
 

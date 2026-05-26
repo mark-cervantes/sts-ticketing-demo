@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/select'
 import { VueDraggable } from 'vue-draggable-plus'
 import {
+  ArchiveIcon,
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -57,7 +58,7 @@ import {
 } from '@lucide/vue'
 import { onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
-import { apiDelete, apiPut } from '@/composables/useApiFetch'
+import { apiDelete, apiPatch, apiPost, apiPut } from '@/composables/useApiFetch'
 import { useStatuses } from '@/composables/useStatuses'
 import { useColumnSort, SORT_OPTIONS } from '@/composables/useColumnSort'
 import type { SortKey } from '@/composables/useColumnSort'
@@ -84,6 +85,7 @@ const emit = defineEmits<{
   moveIssue: [issueId: number, fromStatusSlug: string, toStatusSlug: string, dropIndex: number]
   selectIssue: [issueId: number]
   columnDeleted: []
+  reloadBoard: []
 }>()
 
 const { refresh: refreshStatuses } = useStatuses()
@@ -311,6 +313,37 @@ function handleFilteredDrag(): void {
   })
 }
 
+// ── Bulk archive (resolved column only) ───────────────────────────────────────
+const bulkArchiving = ref(false)
+const bulkArchiveDialogOpen = ref(false)
+
+async function handleBulkArchive(): Promise<void> {
+  bulkArchiving.value = true
+  try {
+    const response = await apiPost('/api/issues/bulk-archive', {})
+    if (!response.ok) {
+      const err = (await response.json()) as { message?: string }
+      toast.error(err.message ?? 'Failed to archive resolved issues.')
+      return
+    }
+    const data = (await response.json()) as { archived_count: number }
+    const count = data.archived_count
+    if (count > 0) {
+      toast.info(`Archived ${count} ticket${count === 1 ? '' : 's'}`, {
+        description: 'Show archived tickets using the filter in the sidebar.',
+      })
+    } else {
+      toast.info('No resolved tickets to archive.')
+    }
+    bulkArchiveDialogOpen.value = false
+    emit('reloadBoard')
+  } catch {
+    toast.error('Network error — bulk archive failed.')
+  } finally {
+    bulkArchiving.value = false
+  }
+}
+
 // ── Sort helpers ──────────────────────────────────────────────────────────────
 function handleSortChange(value: AcceptableValue): void {
   if (typeof value === 'string') {
@@ -372,6 +405,40 @@ function currentSortLabel(): string {
       >
         {{ column.totalCount }}
       </span>
+
+      <!-- Archive all — resolved column only, non-edit-mode, has issues -->
+      <AlertDialog v-if="!editMode && column.isResolved && column.issueCount > 0" v-model:open="bulkArchiveDialogOpen">
+        <AlertDialogTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6 shrink-0 text-muted-foreground/60 hover:text-muted-foreground"
+            title="Archive all resolved tickets"
+            aria-label="Archive all resolved tickets"
+          >
+            <ArchiveIcon class="size-3.5" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive all resolved tickets?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Archive all {{ column.issueCount }} resolved ticket{{ column.issueCount === 1 ? '' : 's' }}?
+              They'll be hidden from the board but can be shown via the "Show archived" filter in the sidebar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel :disabled="bulkArchiving">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              :disabled="bulkArchiving"
+              @click.prevent="handleBulkArchive"
+            >
+              <LoaderCircleIcon v-if="bulkArchiving" class="mr-1.5 size-4 animate-spin" />
+              {{ bulkArchiving ? 'Archiving…' : 'Archive all' }}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <!-- Sort dropdown — subtle, non-edit-mode -->
       <DropdownMenu v-if="!editMode">
@@ -535,7 +602,7 @@ function currentSortLabel(): string {
         :key="issue.id"
         :data-issue-id="issue.id"
         :data-from-status="issue.status"
-        :class="{ 'no-drag': issue.can?.update === false }"
+        :class="{ 'no-drag': issue.can?.update === false || issue.archived_at !== null }"
         class="relative"
       >
         <!-- View-only lock indicator -->

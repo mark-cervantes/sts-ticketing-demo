@@ -171,6 +171,11 @@ async function handleCreateStatus(): Promise<void> {
 async function handleColumnDeleted(): Promise<void> {
   await loadInitial()
 }
+
+// When bulk archive completes, reload the board so archived tickets disappear
+async function handleReloadBoard(): Promise<void> {
+  await loadInitial()
+}
 </script>
 
 <template>
@@ -222,6 +227,7 @@ async function handleColumnDeleted(): Promise<void> {
           @select-issue="handleSelectIssue"
           @move-issue="handleMoveIssue"
           @column-deleted="handleColumnDeleted"
+          @reload-board="handleReloadBoard"
         />
       </VueDraggable>
 

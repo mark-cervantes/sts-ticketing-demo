@@ -30,6 +30,8 @@ const columnLoading = ref<Record<string, boolean>>({})
  * Fetch issues for a single status column using the status slug.
  * Backend scopeFilterByStatus accepts slug strings for backward compat.
  * @param perPage - Override per-page count (defaults to module-level PER_PAGE)
+ * @param includeArchived - When true, appends ?include_archived=1 to include archived issues.
+ *   Unlike myTickets (client-side), this changes the server query.
  */
 async function fetchColumn(
   statusSlug: string,
@@ -37,6 +39,7 @@ async function fetchColumn(
   priorityFilter: string[],
   categoryFilter: string | null,
   perPage: number = PER_PAGE,
+  includeArchived: boolean = false,
 ): Promise<PaginatedResponse<Issue>> {
   const params: Record<string, string> = {
     status: statusSlug,
@@ -48,6 +51,9 @@ async function fetchColumn(
   }
   if (categoryFilter) {
     params.category = categoryFilter
+  }
+  if (includeArchived) {
+    params.include_archived = '1'
   }
   const qs = buildQueryString(params)
   return apiFetch<PaginatedResponse<Issue>>(`/api/issues?${qs}`)
@@ -151,7 +157,7 @@ function sortIssues(issues: Issue[], sortKey: string): Issue[] {
 }
 
 export function useKanbanBoard() {
-  const { filters, myTickets, initStatusesFilter } = useIssueFilters()
+  const { filters, myTickets, showArchived, initStatusesFilter } = useIssueFilters()
   const { statuses, fetchStatuses } = useStatuses()
   const { sortMap, getSortKey } = useColumnSort()
 
@@ -232,6 +238,7 @@ export function useKanbanBoard() {
             // Resolved column gets a smaller initial page (10) so the collapsed
             // state is cheap — the server still returns meta.total for the badge.
             s.slug === 'resolved' ? 10 : PER_PAGE,
+            showArchived.value,
           ),
         ),
       )
@@ -267,6 +274,8 @@ export function useKanbanBoard() {
         nextPage,
         filters.value.priorities,
         filters.value.category,
+        PER_PAGE,
+        showArchived.value,
       )
       columnMap.value[statusSlug].push(...result.data)
       paginationState.value[statusSlug] = {
@@ -431,8 +440,10 @@ export function useKanbanBoard() {
   // Re-fetch when filters change (priority, category — status hides columns client-side)
   // "My Tickets" is intentionally excluded — it is client-side filtering only
   // and must NOT trigger a round-trip that clears the board.
+  // "Show Archived" IS included — it changes the API query (?include_archived=1)
+  // and must trigger a full re-fetch from the server.
   watch(
-    () => [filters.value.priorities.slice(), filters.value.category] as const,
+    () => [filters.value.priorities.slice(), filters.value.category, showArchived.value] as const,
     () => {
       void loadInitial()
     },

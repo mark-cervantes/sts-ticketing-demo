@@ -96,6 +96,7 @@ export interface Issue {
   category_id: number
   created_at: string
   updated_at: string
+  archived_at: string | null
   user: IssueUser
   category: IssueCategory
   comments_count?: number
@@ -105,6 +106,7 @@ export interface Issue {
     update: boolean
     comment: boolean
     delete: boolean
+    archive: boolean
   }
 }
 

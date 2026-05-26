@@ -26,6 +26,20 @@ const myTickets = ref<boolean>((() => {
   }
 })())
 
+/**
+ * "Show Archived" toggle — triggers server re-fetch (adds ?include_archived=1).
+ * Module-scoped singleton so it survives component re-mounts.
+ * Persisted in localStorage as 'kanban-filter-show-archived'.
+ * NOTE: Unlike myTickets (client-side only), this MUST trigger loadInitial() in useKanbanBoard.
+ */
+const showArchived = ref<boolean>((() => {
+  try {
+    return localStorage.getItem('kanban-filter-show-archived') === 'true'
+  } catch {
+    return false
+  }
+})())
+
 const categories = ref<Category[]>([])
 const categoriesLoading = ref(false)
 
@@ -101,6 +115,20 @@ function toggleMyTickets(value?: boolean): void {
   }
 }
 
+/**
+ * Toggle "Show Archived" server-side filter.
+ * Persists state to localStorage immediately.
+ * Adding to useKanbanBoard watch() is what triggers the actual re-fetch.
+ */
+function toggleShowArchived(value?: boolean): void {
+  showArchived.value = value !== undefined ? value : !showArchived.value
+  try {
+    localStorage.setItem('kanban-filter-show-archived', showArchived.value ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
 function clearFilters(): void {
   const { statuses: allStatuses } = useStatuses()
   filters.value = {
@@ -115,12 +143,20 @@ function clearFilters(): void {
   } catch {
     // ignore
   }
+  // Also reset "Show Archived"
+  showArchived.value = false
+  try {
+    localStorage.setItem('kanban-filter-show-archived', 'false')
+  } catch {
+    // ignore
+  }
 }
 
 export function useIssueFilters() {
   return {
     filters,
     myTickets,
+    showArchived,
     categories,
     categoriesLoading,
     fetchCategories,
@@ -129,6 +165,7 @@ export function useIssueFilters() {
     togglePriority,
     setCategory,
     toggleMyTickets,
+    toggleShowArchived,
     clearFilters,
   }
 }
