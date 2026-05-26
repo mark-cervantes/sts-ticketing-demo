@@ -35,6 +35,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
     'summary_status',
     'needs_attention',
     'deadline_at',
+    'archived_at',
 ])]
 class Issue extends Model
 {
@@ -53,6 +54,7 @@ class Issue extends Model
             'visibility' => Visibility::class,
             'summary_status' => SummaryStatus::class,
             'deadline_at' => 'immutable_datetime',
+            'archived_at' => 'immutable_datetime',
             'needs_attention' => 'boolean',
         ];
     }
@@ -208,5 +210,54 @@ class Issue extends Model
                 })
                 ->orWhere('visibility', Visibility::Public);
         });
+    }
+
+    /**
+     * Scope to issues that are not archived.
+     *
+     * Default filter on Kanban index — excludes archived tickets unless
+     * the caller explicitly omits this scope.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
+    }
+
+    /**
+     * Scope to issues that are archived.
+     */
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->whereNotNull('archived_at');
+    }
+
+    // -------------------------------------------------------------------------
+    // Archive helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Archive this issue by setting archived_at to now.
+     *
+     * Uses a direct query to avoid triggering the saving observer (which
+     * recomputes needs_attention and advances updated_at) — archive is a
+     * single-column write with no business-logic side-effects.
+     *
+     * @see vault/SPEC §5.3 — description change re-triggers summary; archive does NOT.
+     */
+    public function archive(): void
+    {
+        static::where('id', $this->id)->update(['archived_at' => now()]);
+        $this->archived_at = now();
+    }
+
+    /**
+     * Restore an archived issue by clearing archived_at.
+     *
+     * Same direct-query approach as archive() to avoid observer side-effects.
+     */
+    public function unarchive(): void
+    {
+        static::where('id', $this->id)->update(['archived_at' => null]);
+        $this->archived_at = null;
     }
 }

@@ -51,6 +51,11 @@ class IssueController extends Controller
             ->withCount('comments')
             ->accessibleBy($request->user());
 
+        // Exclude archived issues by default; include them when explicitly requested (SPEC §4.2)
+        if (! $request->boolean('include_archived')) {
+            $query->active();
+        }
+
         // Filters — via named model scopes (G5); each scope silently ignores invalid values
         $query->filterByStatus($request->query('status'))
             ->filterByPriority($request->query('priority'))

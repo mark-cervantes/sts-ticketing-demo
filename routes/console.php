@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('issues:recalculate-attention')->everyFifteenMinutes();
+Schedule::command('issues:auto-archive')->daily();

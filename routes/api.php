@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\IssueChatController;
 use App\Http\Controllers\Api\IssueConversationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\IssueArchiveController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\IssueSseController;
 use App\Http\Controllers\ShareController;
@@ -14,10 +15,14 @@ use Illuminate\Support\Facades\Route;
 
 // AI Chat — tool confirmation + suggestions
 // MUST be declared BEFORE the apiResource wildcard to avoid the {issue} segment
-// swallowing "chat" as an issue ID (same precedent as triage-suggest below).
+// swallowing "chat" as an suggestions ID (same precedent as triage-suggest below).
 Route::middleware('auth')->group(function () {
     Route::get('chat/suggestions', [IssueChatController::class, 'suggestions']);
 });
+
+// Archive — bulk-archive MUST be declared BEFORE the apiResource wildcard to avoid
+// the {issue} segment swallowing "bulk-archive" as an issue ID (same precedent as triage-suggest).
+Route::middleware('auth')->post('issues/bulk-archive', [IssueArchiveController::class, 'bulkArchive']);
 
 Route::middleware('auth')->apiResource('issues', IssueController::class);
 
@@ -36,6 +41,12 @@ Route::middleware('auth')->apiResource('issues.shares', ShareController::class)-
 Route::middleware('auth')->group(function () {
     Route::post('comments/{comment}/reactions', [CommentReactionController::class, 'toggle']);
     Route::get('comments/{comment}/reactions', [CommentReactionController::class, 'index']);
+});
+
+// Archive — per-issue archive and unarchive actions
+Route::middleware('auth')->group(function () {
+    Route::patch('issues/{issue}/archive', [IssueArchiveController::class, 'archive']);
+    Route::patch('issues/{issue}/unarchive', [IssueArchiveController::class, 'unarchive']);
 });
 
 // AI — regenerate summary + triage suggestions

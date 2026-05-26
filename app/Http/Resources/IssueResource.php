@@ -46,6 +46,7 @@ class IssueResource extends JsonResource
             'suggested_next_ticket' => $this->suggested_next_ticket,
             'needs_attention' => $this->needs_attention,
             'deadline_at' => $this->deadline_at?->toIso8601String(),
+            'archived_at' => $this->archived_at?->toIso8601String(),
             'user_id' => $this->user_id,
             'category_id' => $this->category_id,
             'created_at' => $this->created_at->toIso8601String(),
@@ -91,6 +92,7 @@ class IssueResource extends JsonResource
                 'update' => $request->user() ? Gate::allows('update', $this->resource) : false,
                 'comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
                 'delete' => $request->user() ? Gate::allows('delete', $this->resource) : false,
+                'archive' => $request->user() ? Gate::allows('update', $this->resource) : false,
             ],
         ];
     }
