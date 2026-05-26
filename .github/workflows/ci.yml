@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [dev, main]
 
+# Auto-cancel previous runs on same branch — prevents zombie queued jobs
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
