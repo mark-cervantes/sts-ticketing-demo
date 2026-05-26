@@ -166,6 +166,12 @@ export function useKanbanBoard() {
   const page = usePage()
   const authUserId = page.props.auth?.user?.id as number | undefined
 
+  // ── Drag-drop sort suppression ─────────────────────────────────────────
+  // After a cross-column drag, skip re-sorting the target column so the
+  // card stays at the drop position. Cleared on next loadInitial() or after
+  // the API response succeeds (which doesn't change columnMap again).
+  const recentDropTarget = ref<string | null>(null)
+
   /**
    * Columns ordered by sort_order, filtered by selected status IDs.
    * Applies "My Tickets" client-side filter and per-column sorting.
@@ -189,9 +195,12 @@ export function useKanbanBoard() {
           issues = issues.filter((issue) => issue.user?.id === authUserId)
         }
 
-        // Apply per-column sort
-        const sortKey = _sortMap[status.slug] ?? getSortKey(status.slug)
-        issues = sortIssues(issues, sortKey)
+        // Apply per-column sort — but skip for the column that just received
+        // a drag-drop so the card stays at the drop position.
+        if (recentDropTarget.value !== status.slug) {
+          const sortKey = _sortMap[status.slug] ?? getSortKey(status.slug)
+          issues = sortIssues(issues, sortKey)
+        }
 
         return {
           status: status.slug,
@@ -214,6 +223,9 @@ export function useKanbanBoard() {
   })
 
   async function loadInitial(): Promise<void> {
+    // Clear drag-drop sort suppression on full reload
+    recentDropTarget.value = null
+
     // Ensure statuses are loaded first
     await fetchStatuses()
 
@@ -331,6 +343,10 @@ export function useKanbanBoard() {
     // VueDraggable already moved the card in localIssues (DOM), but columnMap
     // still has the card in the source. Fixing it now prevents the watcher
     // from triggering a re-render flash during the API round-trip.
+    //
+    // Suppress sorting on the target column so the card stays at drop position.
+    recentDropTarget.value = toStatusSlug
+
     issue.status = toStatusSlug
     issue.status_id = toStatusObj.id
     issue.status_obj = toStatusObj
@@ -402,6 +418,9 @@ export function useKanbanBoard() {
         description: `Could not reach the server to move "${issue.title}". The card was reverted.`,
       })
       void loadInitial()
+    } finally {
+      // Re-enable sorting on the target column now that the drag is settled.
+      recentDropTarget.value = null
     }
   }
 
