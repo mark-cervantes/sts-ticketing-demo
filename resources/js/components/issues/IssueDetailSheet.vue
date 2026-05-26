@@ -53,7 +53,6 @@ import {
   SparklesIcon,
   CalendarIcon,
   AlertCircleIcon,
-  ArrowRightIcon,
   RefreshCwIcon,
   TicketPlusIcon,
 } from '@lucide/vue'
@@ -621,24 +620,6 @@ function handleFollowUpCreated(): void {
                 <p class="whitespace-pre-line text-sm leading-relaxed text-foreground">
                   {{ issue.summary }}
                 </p>
-                <!-- Suggested action banner -->
-                <div
-                  v-if="issue.suggested_next_action"
-                  class="mt-2 flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 dark:bg-primary/10"
-                >
-                  <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <ArrowRightIcon class="size-4 text-primary" />
-                  </div>
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-                      Suggested Next Action
-                    </p>
-                    <p class="mt-0.5 text-sm text-foreground">
-                      {{ issue.suggested_next_action }}
-                    </p>
-                  </div>
-                </div>
-
                 <!-- Suggested follow-up ticket card -->
                 <button
                   v-if="issue.suggested_next_ticket"
