@@ -293,15 +293,19 @@ export function useKanbanBoard() {
       const responseData = (await response.json()) as { data: Issue }
       issue.updated_at = responseData.data.updated_at
 
-      // Remove the issue from the source column in columnMap.
-      // VueDraggable moved the DOM element to the target column's localIssues,
-      // but the source column's data in columnMap still has the issue —
-      // the watcher then re-syncs localIssues from columnMap, re-rendering it.
+      // Sync columnMap to match what VueDraggable already did to localIssues:
+      // 1. Remove from source column
+      // 2. Add to target column (if not already there)
+      // This keeps columnMap in sync so the watcher's ID-set comparison
+      // doesn't trigger a reset that would snap the card to a wrong position.
       if (sourceColumn) {
         const srcIdx = sourceColumn.findIndex((i) => i.id === issueId)
         if (srcIdx !== -1) {
           sourceColumn.splice(srcIdx, 1)
         }
+      }
+      if (targetColumn && !targetColumn.find((i) => i.id === issueId)) {
+        targetColumn.push(issue)
       }
 
       toast.success(`Moved to ${toStatusObj.name}`)

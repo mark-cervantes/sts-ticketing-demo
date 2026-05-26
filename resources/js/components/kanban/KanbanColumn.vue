@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { KanbanColumnDef } from '@/types/issue'
+import type { Issue, KanbanColumnDef } from '@/types/issue'
 import IssueCard from '@/components/kanban/IssueCard.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -68,9 +68,26 @@ const { refresh: refreshStatuses } = useStatuses()
 // ── Local issues model ────────────────────────────────────────────────────────
 // vue-draggable-plus uses v-model with the default slot (not #item slots).
 // Keep a local copy that syncs from the parent's reactive column.issues.
+//
+// IMPORTANT: Only reset localIssues when the SET of issues changes (add/remove),
+// NOT when an issue's fields change in-place (e.g., status update after drag).
+// Deep-watching would reset the VueDraggable order on every field mutation,
+// snapping dragged cards to the top of the column.
 const localIssues = ref([...props.column.issues])
+
+function issueIds(issues: Issue[]): string {
+  return issues.map(i => i.id).join(',')
+}
+
 watch(() => props.column.issues, (newIssues) => {
-  localIssues.value = [...newIssues]
+  const oldIds = issueIds(localIssues.value)
+  const newIds = issueIds(newIssues)
+  if (oldIds !== newIds) {
+    // Issue set changed (added/removed) — rebuild localIssues
+    localIssues.value = [...newIssues]
+  }
+  // If only fields changed (same IDs), localIssues already has the same
+  // object references via columnMap — no reset needed.
 }, { deep: true })
 
 // ── Inline rename ─────────────────────────────────────────────────────────────
