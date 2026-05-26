@@ -85,9 +85,9 @@ Same architectural concerns, different default organizing principle.
 | 11 | [Design Patterns Audit](#11-design-patterns-audit) | §1–10 | 30 min |
 | 12 | [Best Practices Audit](#12-best-practices-audit) | §1–10 | 20 min |
 | 13 | [What's Framework vs. Custom](#13-whats-framework-vs-custom) | §1–10 | 15 min |
+| 14 | [Frontend Architecture](#14-frontend-architecture) | §8 | 30 min |
 
 *Future sections to add in subsequent iterations:*
-- §14 Frontend Architecture (Inertia, Vue composables, TypeScript contracts)
 - §15 Real-time with SSE (IssueSseController, useSummaryStream)
 - §16 Queue, Jobs, and Horizon
 - §17 Testing Architecture
@@ -2430,18 +2430,76 @@ not need to refetch user/category/status metadata for each issue.
 
 This is how one resource class can serve multiple endpoints cleanly.
 
-### `can_comment` is server-derived UI permission
+### The `can` map — server-derived permissions as a structured object
 
-The resource computes:
+This is one of the most important patterns in the resource layer. Look at the
+bottom of `IssueResource::toArray()`:
 
 ```php
-'can_comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+'can' => [
+    'view'    => $request->user() ? Gate::allows('view', $this->resource) : false,
+    'update'  => $request->user() ? Gate::allows('update', $this->resource) : false,
+    'comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+    'delete'  => $request->user() ? Gate::allows('delete', $this->resource) : false,
+],
 ```
 
-That is powerful because the UI does not invent permission logic; it consumes a
-server-certified answer.
+This replaces what was originally scattered individual booleans like
+`can_comment`, `can_update`, etc. The refactored `can` map is better for
+several reasons:
 
-This is a very good full-stack pattern.
+1. **One structured location.** All permission decisions live in a single
+   nested object instead of being sprinkled across the top-level response.
+2. **The frontend can type it precisely.** The TypeScript contract becomes:
+
+   ```typescript
+   can?: {
+     view: boolean;
+     update: boolean;
+     comment: boolean;
+     delete: boolean;
+   }
+   ```
+
+3. **Adding a new permission is one line.** If you later need `can.share` or
+   `can.assign`, you add one line to the `can` array. No new top-level key, no
+   migration of existing consumers.
+
+4. **The UI never invents permission logic.** Every permission question the
+   frontend could ask — "can this user drag this card?", "should I show the
+   delete button?" — is answered by the server. The frontend consumes; the
+   backend decides.
+
+**NestJS comparison:** this is like a response serializer/interceptor that
+decorates every DTO with a permissions map derived from CASL ability checks.
+In a Nest project you might build a `PermissionsInterceptor` that runs after
+serialization and attaches `can: { ... }` based on the current user's abilities.
+Laravel's `Gate::allows()` inside the resource achieves the same result with
+less ceremony.
+
+**Why `Gate::allows()` instead of calling the Policy directly?**
+
+`Gate::allows('update', $this->resource)` internally dispatches to
+`IssuePolicy::update($user, $issue)`. The Gate facade is just the public API
+for the same policy system covered in §4. Using it inside a resource is
+idiomatic Laravel — it keeps the resource unaware of which policy class handles
+the decision.
+
+### The `can` map and full-stack authorization design
+
+The `can` map is not just a serialization convenience. It is the foundation of
+the project's **full-stack authorization contract**:
+
+- Backend defines permissions via `IssuePolicy` (§4)
+- Resource serializes them via `Gate::allows()` into the `can` map (§8)
+- Frontend reads `can` to enable/disable UI affordances (§14)
+- Backend still enforces on every mutation via `$this->authorize()` in
+  controllers
+
+That means the `can` map is an **optimization hint for the UI**, not a security
+boundary. The real enforcement still happens server-side. But by providing the
+hint, the backend eliminates a whole class of UX problems — locked cards that
+fail on drag, hidden buttons that should be visible, etc.
 
 ### Reading exercise for §8
 
@@ -2451,6 +2509,12 @@ This is a very good full-stack pattern.
    frontend derive it itself.
 3. Find one field in `IssueResource` that is a pure model field, one that is a
    transformed field, and one that is a computed field.
+4. Count the abilities in the `can` map. Compare them to the methods in
+   `IssuePolicy`. Why might `share` not appear in the `can` map even though
+   `IssuePolicy::share()` exists?
+5. Explain why putting `Gate::allows()` inside the resource is better than
+   having the controller compute permissions and pass them to the resource as
+   extra data.
 
 ---
 
@@ -2540,14 +2604,138 @@ internal contract.
 
 That is a very clean async orchestration boundary.
 
+### Default driver is now `llm` — and that is safe because of the manager
+
+The config default is `llm`, not `rules`. That might sound risky — what if
+there is no API key configured?
+
+Look at `SummaryManager::getDefaultDriver()`:
+
+```php
+public function getDefaultDriver(): string
+{
+    $configured = (string) config('summary.default', 'rules');
+
+    if ($configured === 'llm' && empty(config('summary.drivers.llm.api_key'))) {
+        return 'rules';
+    }
+
+    return $configured;
+}
+```
+
+The manager transparently falls back to `rules` when no API key is set. The
+job never needs to handle that case because the driver resolution layer already
+did.
+
+This is a great example of **fail-safe defaults through layer design**: the
+config says "use LLM", but the system gracefully degrades when the environment
+cannot support that.
+
+**NestJS comparison:** imagine a Nest provider that checks for a missing API
+key during `onModuleInit()` and swaps its strategy implementation. Same idea,
+but Laravel's Manager pattern makes it a one-method override.
+
+### Code fence stripping — defensive parsing of LLM output
+
+LLMs do not always follow instructions perfectly. Even with
+`response_format: { type: 'json_object' }`, some models wrap their JSON in
+markdown code fences:
+
+````
+```json
+{ "summary": "...", ... }
+```
+````
+
+`LlmDriver` handles this with `preg_replace`:
+
+```php
+$content = preg_replace('/^\s*```(?:json)?\s*/i', '', $content);
+$content = preg_replace('/\s*```\s*$/i', '', $content);
+$content = trim($content);
+```
+
+This strips opening and closing code fences before `json_decode`. Without it,
+valid JSON wrapped in fences would fail to parse and the summary would
+incorrectly fall back to the rules driver.
+
+This is an important real-world lesson:
+
+> **When integrating with LLMs, always defensively parse output.** Even "JSON
+> mode" responses may arrive with unexpected formatting. Your driver should be
+> resilient to common LLM quirks.
+
+### Comments are now part of the AI prompt
+
+The `LlmDriver` now includes the full comment conversation in the prompt:
+
+```php
+$issue->loadMissing('comments.user');
+$commentsText = $issue->comments
+    ->sortBy('created_at')
+    ->map(fn ($c) => sprintf(
+        '[%s] %s: %s',
+        $c->created_at->format('M d H:i'),
+        $c->user?->name ?? 'System',
+        $c->body
+    ))
+    ->implode("\n");
+```
+
+Several architecture points here:
+
+1. **`loadMissing()`** — not `load()`. This only runs the query if comments are
+   not already loaded. Avoids redundant queries if the caller already eager-loaded
+   them.
+
+2. **Nested eager load: `comments.user`** — loads each comment's author in a
+   single query (not N+1). This is crucial because the driver formats each
+   comment with the author's name.
+
+3. **Chronological formatting** — `sortBy('created_at')` ensures the LLM sees
+   the conversation in timeline order. The `[date] Author: message` format gives
+   the model enough context to understand who said what and when.
+
+4. **Fallback `'(No comments yet)'`** — empty comment lists get a placeholder so
+   the prompt template's `{{comments}}` variable is never blank.
+
+**NestJS comparison:** similar to building a prompt context builder service that
+gathers related entities before calling the AI endpoint. The key insight is that
+`loadMissing()` makes this safe to call regardless of whether comments were
+pre-loaded.
+
+### Model suggestions endpoint supports multiple providers
+
+The `AiSettingsController::models()` endpoint now accepts an optional
+`?preset=<key>` query parameter. This means the frontend can fetch available
+models for a provider **before saving the config** — useful for the settings UI.
+
+The endpoint normalizes responses from two different provider APIs:
+
+- **OpenRouter** — `GET /api/v1/models` (returns `data` array)
+- **Ollama-compatible** — `GET /api/tags` (returns `models` array)
+
+Results are cached for one hour per provider/preset.
+
+This is a good example of the **adapter pattern at the API boundary**: two
+different upstream APIs, normalized into one response shape for the frontend.
+
 ### Reading exercise for §9
 
 1. Trace a successful summary path from `IssueService::create()` to
    `GenerateSummaryJob::handle()` to `Summary::generate()`.
-2. Explain why the “no API key” fallback belongs in `SummaryManager`, not in the
+2. Explain why the "no API key" fallback belongs in `SummaryManager`, not in the
    job.
 3. Compare `LlmDriver` and `RulesDriver`. Which parts of the interface contract
    force them to remain interchangeable?
+4. Why does `LlmDriver` use `loadMissing('comments.user')` instead of
+   `load('comments.user')`? What would happen if the job caller already
+   eager-loaded comments?
+5. Remove the `preg_replace` lines mentally. If a model returns
+   `` ```json\n{"summary":"..."}\n``` ``, what would `json_decode` return? Why?
+6. The model suggestions endpoint caches results for 1 hour. Why is caching
+   appropriate here but not for, say, the summary generation itself?
 
 ---
 
@@ -2641,10 +2829,14 @@ object-specific permissions at the fine level.
 | Facade | `Summary` | readable app entrypoint |
 | Value Object | `SummaryResult` | stable immutable driver output |
 | Resource Transformer | `IssueResource` | stable API contract |
+| Permission map in resource | `IssueResource` `can` object | server-certified UI permission hints |
 | Optimistic Locking | `IssueService::update()` | safe concurrent mutation |
 | Database-backed workflow metadata | `IssueStatus` | runtime-configurable status system |
 | Composable shared state | Vue composables | lightweight frontend architecture |
 | Optimistic UI with rollback | `useKanbanBoard` | fast UX with consistency recovery |
+| Defense-in-depth authorization | KanbanColumn + moveIssue | UI prevent → API enforce → inform user |
+| Defensive LLM output parsing | `LlmDriver` code fence stripping | resilient to model output quirks |
+| Prefill-and-confirm dialog | `CreateIssueDialog` prefill prop | user reviews before commit |
 
 ### Which patterns are most worth internalizing
 
@@ -2677,6 +2869,10 @@ Those four explain most of the codebase.
 | Focused service usage | `IssueService` only where needed | avoids ceremony |
 | DB-backed configurable workflow state | `IssueStatus` | flexible product evolution |
 | Shared composables instead of overbuilt store | `resources/js/composables/*` | right-sized frontend state |
+| Permission map (`can` object) instead of scattered booleans | `IssueResource` | typed, extensible, one-location |
+| Defense-in-depth drag authorization | KanbanColumn + useKanbanBoard | UI filter + API 403 + user feedback |
+| Defensive LLM output parsing | `LlmDriver` code fence strip | resilient to model formatting quirks |
+| Prefill dialog instead of silent auto-create | `CreateIssueDialog` | user always reviews before commit |
 
 ### Practices intentionally not used
 
@@ -2802,10 +2998,185 @@ The frontend depends heavily on the shape defined by `IssueResource`, including:
 - `status` slug
 - `status_id`
 - `status_obj`
-- `can_comment`
+- `can` map (`view`, `update`, `comment`, `delete`)
 - comments array when loaded
 
 That means backend resource design and frontend composables must evolve together.
+
+### Frontend authorization — drag permissions and defense-in-depth
+
+One of the strongest full-stack patterns in this project is how authorization
+flows from backend policy to frontend drag behavior. The chain is:
+
+```text
+IssuePolicy::update()  →  IssueResource 'can' map  →  KanbanColumn UI
+```
+
+In `KanbanColumn.vue`, each card is conditionally marked as undraggable:
+
+```vue
+<div
+  :class="{ 'no-drag': issue.can?.update === false }"
+>
+  <span v-if="issue.can?.update === false">
+    <LockIcon />
+  </span>
+  <IssueCard :issue="issue" />
+</div>
+```
+
+And the SortableJS instance uses a `filter` prop to block drag at the DOM level:
+
+```vue
+<VueDraggable
+  :filter="'.no-drag'"
+  :prevent-on-filter="true"
+  @filter="handleFilteredDrag"
+>
+```
+
+This is a **three-layer defense-in-depth** pattern:
+
+| Layer | Mechanism | Effect |
+|---|---|---|
+| **UI prevention** | `.no-drag` CSS class + `filter` prop | Card cannot be picked up; lock icon shows |
+| **Informational** | `@filter` event fires `handleFilteredDrag` | Info toast explains why drag failed |
+| **API enforcement** | Controller `$this->authorize('update', $issue)` | 403 if somehow a request arrives |
+
+The `handleFilteredDrag` function is a nice UX detail:
+
+```typescript
+function handleFilteredDrag(): void {
+  const now = Date.now()
+  if (now - lastFilterToast < 3000) return  // debounce rapid taps
+  lastFilterToast = now
+
+  toast.info('View-only issue', {
+    description: "You don't have edit access to this issue. ..."
+  })
+}
+```
+
+And in `useKanbanBoard`, the `moveIssue` function also catches 403 at the API
+level:
+
+```typescript
+if (response.status === 403) {
+  toast.error('Permission denied', {
+    description: `You don't have edit access to "${issue.title}". ...`
+  })
+  void loadInitial()  // rollback to server state
+  return
+}
+```
+
+**Why both layers matter:** the SortableJS filter prevents wasted API calls for
+the common case. But if the permissions change between page load and drag (a
+race condition), the API 403 handler catches it and rolls back the board state.
+
+**NestJS comparison:** this is like disabling drag handlers in Angular CDK
+based on decoded JWT permissions, but here the permissions come serialized
+directly from the API resource. The backend does the permission evaluation; the
+frontend just reads the `can.update` boolean. No JWT decoding, no CASL
+replication — just one server-certified answer.
+
+This pattern eliminates the "permission logic duplication" problem entirely.
+The frontend is a consumer of permission decisions, not a decision-maker.
+
+### Toast architecture — lessons in third-party component integration
+
+The toast system uses `vue-sonner` with the shadcn-vue `Sonner` wrapper. This
+integration required solving two non-obvious problems that are worth learning.
+
+#### Problem 1: CSS must be explicitly imported
+
+`vue-sonner` ships its CSS separately. Without importing it, the toasts render
+but positioning props (`position`, `richColors`, etc.) have no effect — the
+toasts just stack at top-left with no styling.
+
+The fix is one line in `app.ts`:
+
+```typescript
+import 'vue-sonner/style.css';
+```
+
+This is a broader lesson about third-party Vue component libraries:
+
+> **Always check if the library ships its own CSS separately.** Many headless
+> or style-flexible libraries separate their CSS so you can override it. But
+> that means you must opt in explicitly.
+
+If your toasts render but look wrong, the CSS import is the first thing to
+check.
+
+#### Problem 2: Wrapper component reactivity
+
+The shadcn-vue `Sonner` wrapper was destructuring props at setup time, making
+configuration one-shot (not reactive). The solution was to hardcode config
+directly on the `<Sonner>` component instead of relying on the wrapper's prop
+forwarding.
+
+This is another general lesson:
+
+> **When a wrapper component does not forward props reactively, configure the
+> underlying component directly.** Do not fight the wrapper; bypass it.
+
+#### Error toast pattern: title + description
+
+Throughout the project, error toasts use a structured pattern:
+
+```typescript
+toast.error('Permission denied', {
+  description: `You don't have edit access to "${issue.title}".`
+})
+```
+
+This gives users two levels of information:
+- **Title** — what went wrong (scannable)
+- **Description** — why and what to do about it (detailed)
+
+That is much better than a generic "Something went wrong" toast.
+
+### The follow-up ticket dialog — "review before commit" pattern
+
+`CreateIssueDialog` now accepts an optional `prefill` prop for pre-populating
+the form:
+
+```typescript
+const props = defineProps<{
+  open: boolean
+  prefill?: Partial<IssueFormData>
+}>()
+
+watch(() => props.open, (isOpen) => {
+  if (isOpen && props.prefill) {
+    if (props.prefill.title) form.value.title = props.prefill.title
+    if (props.prefill.description) form.value.description = props.prefill.description
+    if (props.prefill.priority) form.value.priority = props.prefill.priority
+    if (props.prefill.category_id) form.value.category_id = props.prefill.category_id
+  }
+})
+```
+
+The `IssueDetailSheet` uses this to open the dialog with suggested values
+instead of silently creating the issue via API.
+
+This is a deliberate UX architecture choice:
+
+> **Never auto-create on behalf of the user without confirmation.** When a user
+> clicks "create follow-up", open a pre-filled form for review rather than
+> immediately POSTing. The user might want to adjust the title, change the
+> priority, or cancel entirely.
+
+**Why `watch` on `props.open` instead of `onMounted`?**
+
+Because dialogs in Vue are mounted once and toggled via `v-model:open`. The
+`watch` fires every time the dialog opens, applying fresh prefill values each
+time. `onMounted` would only fire once and miss subsequent opens.
+
+This is a subtle but important Vue lifecycle distinction. For any dialog or
+sheet component that is mounted once and reused, use a `watch` on the open
+state for initialization logic.
 
 ### Reading exercise for §14
 
@@ -2815,6 +3186,15 @@ That means backend resource design and frontend composables must evolve together
 3. Open `useSummaryStream` and describe when it switches from SSE to polling.
 4. Compare `useKanbanBoard` to a Pinia store mentally. What benefits does this
    smaller pattern give for this project size?
+5. In `KanbanColumn.vue`, trace the three layers of drag authorization:
+   `.no-drag` class, SortableJS `filter` prop, and the `moveIssue` 403 handler.
+   What would break if you removed the middle layer (the `filter` prop)?
+6. Open `app.ts` and find the `vue-sonner/style.css` import. Remove it
+   mentally. What symptoms would you see in the UI?
+7. Open `CreateIssueDialog.vue`. Why does the prefill logic use
+   `watch(() => props.open, ...)` instead of `onMounted()`? What would fail if
+   the dialog was opened a second time with different prefill values and you
+   used `onMounted` instead?
 
 ---
 
