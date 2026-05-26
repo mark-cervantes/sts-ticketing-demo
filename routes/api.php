@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\CommentReactionController;
+use App\Http\Controllers\Api\IssueChatController;
+use App\Http\Controllers\Api\IssueConversationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\IssueController;
@@ -44,4 +46,18 @@ Route::middleware('auth')->group(function () {
     Route::post('settings/ai/test', [AiSettingsController::class, 'test']);
     Route::get('settings/ai/models', [AiSettingsController::class, 'models']);
     Route::get('settings/ai/presets', [AiSettingsController::class, 'presets']);
+});
+
+// AI Chat — stateless streaming + saved conversations
+Route::middleware('auth')->group(function () {
+    // Stateless chat (ephemeral, nothing persisted)
+    Route::post('issues/{issue}/chat', [IssueChatController::class, 'chat'])
+        ->middleware('throttle:chat');
+
+    // Saved conversations
+    Route::get('issues/{issue}/conversations', [IssueConversationController::class, 'listConversations']);
+    Route::post('issues/{issue}/conversations', [IssueConversationController::class, 'saveConversation']);
+    Route::get('issues/{issue}/conversations/{conversation}', [IssueConversationController::class, 'showConversation']);
+    Route::post('issues/{issue}/conversations/{conversation}/continue', [IssueConversationController::class, 'continueConversation'])
+        ->middleware('throttle:chat');
 });
