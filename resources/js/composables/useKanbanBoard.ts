@@ -258,8 +258,9 @@ export function useKanbanBoard() {
       if (response.status === 409) {
         // Optimistic lock conflict — revert
         revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error('This issue was updated by another user. Your changes were not saved.', {
-          duration: 5000,
+        toast.error('Conflict — issue was updated by someone else', {
+          description: `"${issue.title}" was reverted to ${fromStatusSlug}. Refresh and try again.`,
+          duration: 6000,
         })
         return
       }
@@ -267,13 +268,17 @@ export function useKanbanBoard() {
       if (response.status === 422) {
         const errorData = (await response.json()) as { message?: string }
         revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error(errorData.message ?? 'Validation error — status change rejected.')
+        toast.error('Status change rejected', {
+          description: errorData.message ?? `"${issue.title}" could not be moved to ${toStatusObj.name}.`,
+        })
         return
       }
 
       if (!response.ok) {
         revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error('Failed to update issue status.')
+        toast.error('Failed to move issue', {
+          description: `"${issue.title}" — server returned ${response.status}. The card was reverted.`,
+        })
         return
       }
 
@@ -293,7 +298,9 @@ export function useKanbanBoard() {
       toast.success(`Moved to ${toStatusObj.name}`)
     } catch {
       revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-      toast.error('Network error — could not update issue status.')
+      toast.error('Network error', {
+        description: `Could not reach the server to move "${issue.title}". The card was reverted.`,
+      })
     }
   }
 
