@@ -12,6 +12,13 @@ use App\Http\Controllers\ShareController;
 use App\Http\Controllers\StatusController;
 use Illuminate\Support\Facades\Route;
 
+// AI Chat — tool confirmation + suggestions
+// MUST be declared BEFORE the apiResource wildcard to avoid the {issue} segment
+// swallowing "chat" as an issue ID (same precedent as triage-suggest below).
+Route::middleware('auth')->group(function () {
+    Route::get('chat/suggestions', [IssueChatController::class, 'suggestions']);
+});
+
 Route::middleware('auth')->apiResource('issues', IssueController::class);
 
 Route::middleware('auth')->post('issues/{issue}/comments', [CommentController::class, 'store']);
@@ -53,6 +60,9 @@ Route::middleware('auth')->group(function () {
     // Stateless chat (ephemeral, nothing persisted)
     Route::post('issues/{issue}/chat', [IssueChatController::class, 'chat'])
         ->middleware('throttle:chat');
+
+    // Tool confirmation — executes a tool after user explicit confirmation
+    Route::post('issues/{issue}/chat/tool-confirm', [IssueChatController::class, 'confirmTool']);
 
     // Saved conversations
     Route::get('issues/{issue}/conversations', [IssueConversationController::class, 'listConversations']);

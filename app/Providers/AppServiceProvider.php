@@ -7,6 +7,8 @@ use App\Models\Comment;
 use App\Models\Issue;
 use App\Models\User;
 use App\Observers\CommentObserver;
+use App\Services\Ai\Tools\ChatToolRegistry;
+use App\Services\Ai\Tools\CreateTicketTool;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -21,7 +23,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(ChatToolRegistry::class, function () {
+            return tap(new ChatToolRegistry, function (ChatToolRegistry $registry): void {
+                $registry->register(new CreateTicketTool);
+            });
+        });
     }
 
     /**
