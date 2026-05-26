@@ -102,7 +102,7 @@ const hasActiveFilters = computed(() => {
           <Switch
             :checked="myTickets"
             aria-label="Show only my tickets"
-            @update:checked="toggleMyTickets"
+            @update:model-value="toggleMyTickets"
           />
         </div>
         <p v-if="myTickets" class="mt-1.5 text-[11px] text-muted-foreground">
@@ -121,7 +121,7 @@ const hasActiveFilters = computed(() => {
           <Switch
             :checked="showArchived"
             aria-label="Show archived tickets"
-            @update:checked="toggleShowArchived"
+            @update:model-value="toggleShowArchived"
           />
         </div>
         <p v-if="showArchived" class="mt-1.5 text-[11px] text-muted-foreground">
