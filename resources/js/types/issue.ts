@@ -101,6 +101,7 @@ export interface Issue {
   comments_count?: number
   comments?: IssueComment[]
   can_comment?: boolean
+  can_update?: boolean
 }
 
 /** Filter state for the Kanban board sidebar. */

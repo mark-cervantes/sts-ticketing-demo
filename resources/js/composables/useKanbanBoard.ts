@@ -273,6 +273,14 @@ export function useKanbanBoard() {
         return
       }
 
+      if (response.status === 403) {
+        toast.error('Permission denied', {
+          description: `You don't have edit access to "${issue.title}". Ask the owner to share it with you.`,
+        })
+        void loadInitial()
+        return
+      }
+
       if (!response.ok) {
         toast.error('Failed to move issue', {
           description: `"${issue.title}" — server returned ${response.status}. The card was reverted.`,

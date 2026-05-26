@@ -37,7 +37,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { VueDraggable } from 'vue-draggable-plus'
-import { GripVerticalIcon, InboxIcon, LoaderCircleIcon, XIcon } from '@lucide/vue'
+import { GripVerticalIcon, InboxIcon, LoaderCircleIcon, LockIcon, XIcon } from '@lucide/vue'
 import { ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { apiDelete, apiPut } from '@/composables/useApiFetch'
@@ -358,6 +358,8 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
       ghost-class="opacity-30"
       drag-class="rotate-2"
       :disabled="editMode"
+      :filter="'.no-drag'"
+      :prevent-on-filter="true"
       class="flex-1 space-y-2 overflow-y-auto px-2 pb-2"
       :class="column.issues.length === 0 ? 'min-h-[120px]' : ''"
       :data-status="column.status"
@@ -368,7 +370,17 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
         :key="issue.id"
         :data-issue-id="issue.id"
         :data-from-status="issue.status"
+        :class="{ 'no-drag': issue.can_update === false }"
+        class="relative"
       >
+        <!-- View-only lock indicator -->
+        <span
+          v-if="issue.can_update === false"
+          class="absolute right-2 top-2 z-10 text-muted-foreground/50"
+          title="You can only view this issue — ask the owner for edit access"
+        >
+          <LockIcon class="size-3" />
+        </span>
         <IssueCard
           :issue="issue"
           @select="(id: number) => emit('selectIssue', id)"
@@ -464,3 +476,10 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
     </DialogContent>
   </Dialog>
 </template>
+
+<style scoped>
+.no-drag {
+  cursor: default;
+  opacity: 0.85;
+}
+</style>
