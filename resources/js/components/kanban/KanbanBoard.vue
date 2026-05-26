@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import type { IssueStatus } from '@/types/issue'
 import { useKanbanBoard } from '@/composables/useKanbanBoard'
 import { useIssueDetail } from '@/composables/useIssueDetail'
 import KanbanColumn from '@/components/kanban/KanbanColumn.vue'
@@ -33,8 +32,8 @@ onUnmounted(() => {
   window.removeEventListener('issue:created', handleIssueCreated)
 })
 
-function handleLoadMore(status: IssueStatus): void {
-  void loadMore(status)
+function handleLoadMore(statusSlug: string): void {
+  void loadMore(statusSlug)
 }
 
 function handleSelectIssue(issueId: number): void {
@@ -49,7 +48,7 @@ function handleSheetOpenChange(value: boolean): void {
   }
 }
 
-function handleMoveIssue(issueId: number, fromStatus: IssueStatus, toStatus: IssueStatus): void {
+function handleMoveIssue(issueId: number, fromStatus: string, toStatus: string): void {
   void moveIssue(issueId, fromStatus, toStatus)
 }
 </script>

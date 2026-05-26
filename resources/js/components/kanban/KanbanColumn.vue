@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { KanbanColumnDef, IssueStatus } from '@/types/issue'
+import type { KanbanColumnDef } from '@/types/issue'
 import IssueCard from '@/components/kanban/IssueCard.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -15,8 +15,8 @@ interface KanbanColumnProps {
 const props = defineProps<KanbanColumnProps>()
 
 const emit = defineEmits<{
-  loadMore: [status: IssueStatus]
-  moveIssue: [issueId: number, fromStatus: IssueStatus, toStatus: IssueStatus]
+  loadMore: [statusSlug: string]
+  moveIssue: [issueId: number, fromStatusSlug: string, toStatusSlug: string]
   selectIssue: [issueId: number]
 }>()
 
@@ -34,8 +34,8 @@ watch(() => props.column.issues, (newIssues) => {
  * `evt.item` is the dragged card wrapper div, which carries `data-issue-id`.
  */
 function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElement }): void {
-  const fromStatus = evt.from.dataset.status as IssueStatus | undefined
-  const toStatus = evt.to.dataset.status as IssueStatus | undefined
+  const fromStatus = evt.from.dataset.status
+  const toStatus = evt.to.dataset.status
 
   // Same-column reorder — nothing to persist
   if (!fromStatus || !toStatus || fromStatus === toStatus) return
@@ -51,6 +51,11 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
   <div class="flex min-w-[280px] flex-1 flex-col rounded-xl bg-muted/50 dark:bg-muted/30">
     <!-- Column header -->
     <div class="flex items-center gap-2 px-3 py-2.5">
+      <!-- Status color dot -->
+      <span
+        class="size-2.5 rounded-full shrink-0"
+        :style="{ backgroundColor: column.color }"
+      />
       <h3 class="text-sm font-semibold text-foreground">
         {{ column.label }}
       </h3>

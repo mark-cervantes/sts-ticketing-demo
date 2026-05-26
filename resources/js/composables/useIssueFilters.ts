@@ -1,12 +1,14 @@
 import { ref } from 'vue'
-import type { IssueFilters, IssueStatus, IssuePriority, Category } from '@/types/issue'
+import type { IssueFilters, IssuePriority, Category } from '@/types/issue'
+import { useStatuses } from '@/composables/useStatuses'
 
 /**
  * Module-scoped shared filter state.
  * Follows useDarkMode pattern — single instance across all consumers.
  */
 const filters = ref<IssueFilters>({
-  statuses: ['open', 'in_progress', 'resolved'],
+  // Start empty (meaning "all") — hydrated from useStatuses after first fetch.
+  statuses: [],
   priorities: [],
   category: null,
 })
@@ -31,17 +33,27 @@ async function fetchCategories(): Promise<void> {
       credentials: 'same-origin',
     })
     if (response.ok) {
-      categories.value = await response.json() as Category[]
+      categories.value = (await response.json()) as Category[]
     }
   } finally {
     categoriesLoading.value = false
   }
 }
 
-function toggleStatus(status: IssueStatus): void {
-  const idx = filters.value.statuses.indexOf(status)
+/**
+ * Ensure the statuses filter is hydrated with all status IDs.
+ * Call after useStatuses has fetched the list.
+ */
+function initStatusesFilter(allStatusIds: number[]): void {
+  if (filters.value.statuses.length === 0 && allStatusIds.length > 0) {
+    filters.value.statuses = [...allStatusIds]
+  }
+}
+
+function toggleStatus(statusId: number): void {
+  const idx = filters.value.statuses.indexOf(statusId)
   if (idx === -1) {
-    filters.value.statuses.push(status)
+    filters.value.statuses.push(statusId)
   } else {
     // Don't allow deselecting ALL statuses
     if (filters.value.statuses.length > 1) {
@@ -64,8 +76,9 @@ function setCategory(slug: string | null): void {
 }
 
 function clearFilters(): void {
+  const { statuses: allStatuses } = useStatuses()
   filters.value = {
-    statuses: ['open', 'in_progress', 'resolved'],
+    statuses: allStatuses.value.map((s) => s.id),
     priorities: [],
     category: null,
   }
@@ -77,6 +90,7 @@ export function useIssueFilters() {
     categories,
     categoriesLoading,
     fetchCategories,
+    initStatusesFilter,
     toggleStatus,
     togglePriority,
     setCategory,

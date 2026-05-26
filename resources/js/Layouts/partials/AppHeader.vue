@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePage, Link, router } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon } from '@lucide/vue'
+import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon, CircleDotIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -62,6 +62,18 @@ function handleLogout(): void {
     >
       <Link :href="route('settings.ai')">
         <BrainCircuitIcon class="size-5" />
+      </Link>
+    </Button>
+
+    <!-- Status Management -->
+    <Button
+      as-child
+      variant="ghost"
+      size="icon"
+      aria-label="Manage statuses"
+    >
+      <Link :href="route('settings.statuses')">
+        <CircleDotIcon class="size-5" />
       </Link>
     </Button>
 
