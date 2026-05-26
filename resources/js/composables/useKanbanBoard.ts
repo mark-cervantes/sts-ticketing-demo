@@ -245,11 +245,31 @@ export function useKanbanBoard() {
 
     const cachedUpdatedAt = issue.updated_at
 
-    // Update status fields in-place (no array reorder)
+    // ── Optimistic update ──────────────────────────────────────────────────
+    // Sync columnMap IMMEDIATELY so the watcher never sees stale data.
+    // VueDraggable already moved the card in localIssues (DOM), but columnMap
+    // still has the card in the source. Fixing it now prevents the watcher
+    // from triggering a re-render flash during the API round-trip.
     issue.status = toStatusSlug
     issue.status_id = toStatusObj.id
     issue.status_obj = toStatusObj
 
+    if (sourceColumn) {
+      const srcIdx = sourceColumn.findIndex((i) => i.id === issueId)
+      if (srcIdx !== -1) {
+        sourceColumn.splice(srcIdx, 1)
+      }
+    }
+    if (targetColumn && !targetColumn.find((i) => i.id === issueId)) {
+      if (dropIndex >= 0 && dropIndex <= targetColumn.length) {
+        targetColumn.splice(dropIndex, 0, issue)
+      } else {
+        targetColumn.push(issue)
+      }
+    }
+
+    // ── API call ───────────────────────────────────────────────────────────
+    // On failure, loadInitial() resets the entire board from the server.
     try {
       const response = await apiPatch(`/api/issues/${issueId}`, {
         status_id: toStatusObj.id,
@@ -290,28 +310,9 @@ export function useKanbanBoard() {
         return
       }
 
-      // Success: update the issue's updated_at from server response
+      // Success: update timestamp from server
       const responseData = (await response.json()) as { data: Issue }
       issue.updated_at = responseData.data.updated_at
-
-      // Sync columnMap to match what VueDraggable already did to localIssues:
-      // 1. Remove from source column
-      // 2. Insert into target column at the exact drop position
-      // This keeps columnMap in sync so the watcher's ID-set comparison
-      // doesn't trigger a reset that would snap the card to a wrong position.
-      if (sourceColumn) {
-        const srcIdx = sourceColumn.findIndex((i) => i.id === issueId)
-        if (srcIdx !== -1) {
-          sourceColumn.splice(srcIdx, 1)
-        }
-      }
-      if (targetColumn && !targetColumn.find((i) => i.id === issueId)) {
-        if (dropIndex >= 0 && dropIndex <= targetColumn.length) {
-          targetColumn.splice(dropIndex, 0, issue)
-        } else {
-          targetColumn.push(issue)
-        }
-      }
 
       toast.success(`Moved to ${toStatusObj.name}`)
     } catch {
