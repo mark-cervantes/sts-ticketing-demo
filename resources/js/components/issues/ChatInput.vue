@@ -16,6 +16,8 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   send: [message: string]
+  focus: []
+  blur: []
 }>()
 
 const text = ref('')
@@ -45,6 +47,8 @@ function handleKeydown(e: KeyboardEvent): void {
       rows="1"
       class="max-h-32 min-h-[2.25rem] flex-1 resize-none overflow-y-auto py-2 text-sm leading-normal"
       @keydown="handleKeydown"
+      @focus="emit('focus')"
+      @blur="emit('blur')"
     />
     <Button
       type="button"

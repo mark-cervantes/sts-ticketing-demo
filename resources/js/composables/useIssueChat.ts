@@ -13,9 +13,13 @@
 
 import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
-import { useStorage } from '@vueuse/core'
 import { apiPost, apiFetch, getCsrfToken } from '@/composables/useApiFetch'
-import type { ChatMessage, SavedConversation } from '@/types/chat'
+import type { ChatMessage, SavedConversation, ToolCallData, ToolConfirmResult } from '@/types/chat'
+
+// ── Module-level suggestion chip cache (shared across all instances on the same page) ──
+let cachedSuggestionChips: string[] | null = null
+
+const ACTION_KEYWORDS = /recommend|suggest|should|need to|follow-up/i
 
 export function useIssueChat(issueId: Ref<number | null>) {
   // ── Instance state (NOT module-level) ──────────────────────────────────────
@@ -26,6 +30,8 @@ export function useIssueChat(issueId: Ref<number | null>) {
   const activeConversationId = ref<number | null>(null)
   const savedConversations = ref<SavedConversation[]>([])
   const error = ref<string | null>(null)
+  const suggestionChips = ref<string[]>([])
+  const hasShownNudge = ref(false)
 
   // sessionStorage-backed ref for the current issue.
   // Key changes with issueId so each issue has its own slot.
@@ -85,6 +91,7 @@ export function useIssueChat(issueId: Ref<number | null>) {
       isStreaming.value = false
       error.value = null
       savedConversations.value = []
+      hasShownNudge.value = false
 
       // Attempt restore from sessionStorage for the new issue
       if (newId !== null) {
@@ -127,10 +134,37 @@ export function useIssueChat(issueId: Ref<number | null>) {
         }
 
         try {
-          const parsed = JSON.parse(payload) as { token?: string; error?: string; content?: string }
+          const parsed = JSON.parse(payload) as {
+            token?: string
+            error?: string
+            content?: string
+            type?: string
+            tool?: string
+            arguments?: Record<string, unknown>
+            requires_confirmation?: boolean
+          }
+
           if (parsed.error) {
             throw new Error(parsed.error)
           }
+
+          // Tool call event — push as a tool_call message, don't accumulate content
+          if (parsed.type === 'tool_call' && parsed.tool) {
+            const toolCallMsg: ChatMessage = {
+              role: 'tool_call',
+              content: '',
+              toolCall: {
+                type: 'tool_call',
+                tool: parsed.tool,
+                arguments: parsed.arguments ?? {},
+                requires_confirmation: parsed.requires_confirmation ?? true,
+              },
+            }
+            messages.value = [...messages.value, toolCallMsg]
+            persistToSession()
+            continue
+          }
+
           // Backend sends {"token":"..."} (IssueChatController line 62)
           const token = parsed.token ?? parsed.content ?? ''
           accumulated += token
@@ -185,6 +219,7 @@ export function useIssueChat(issueId: Ref<number | null>) {
         // ── Stateless mode: POST to /chat with full history ─────────────────
         const history = messages.value
           .slice(0, -1) // exclude the just-added user message
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
           .map((m) => ({ role: m.role, content: m.content }))
 
         response = await apiPost(`/api/issues/${issueId.value}/chat`, {
@@ -213,7 +248,17 @@ export function useIssueChat(issueId: Ref<number | null>) {
       const finalContent = await consumeStream(response)
 
       if (finalContent) {
-        const assistantMsg: ChatMessage = { role: 'assistant', content: finalContent }
+        // Check for contextual nudge (once per session, on first qualifying AI message)
+        const showNudge = !hasShownNudge.value && ACTION_KEYWORDS.test(finalContent)
+        if (showNudge) {
+          hasShownNudge.value = true
+        }
+
+        const assistantMsg: ChatMessage = {
+          role: 'assistant',
+          content: finalContent,
+          showNudge,
+        }
         messages.value = [...messages.value, assistantMsg]
         persistToSession()
       }
@@ -228,6 +273,68 @@ export function useIssueChat(issueId: Ref<number | null>) {
     }
   }
 
+  // ── Load suggestion chips (cached at module level) ─────────────────────────
+
+  async function loadSuggestionChips(): Promise<void> {
+    if (cachedSuggestionChips !== null) {
+      suggestionChips.value = cachedSuggestionChips
+      return
+    }
+
+    try {
+      const data = await apiFetch<string[]>('/api/chat/suggestions')
+      cachedSuggestionChips = Array.isArray(data) ? data : []
+      suggestionChips.value = cachedSuggestionChips
+    } catch {
+      // silently fail — chips are progressive enhancement
+      suggestionChips.value = []
+    }
+  }
+
+  // ── Confirm a tool call ────────────────────────────────────────────────────
+
+  async function confirmTool(
+    messageIndex: number,
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (!issueId.value) return
+
+    try {
+      const response = await apiPost(
+        `/api/issues/${issueId.value}/chat/tool-confirm`,
+        { tool, arguments: args },
+      )
+
+      const json = (await response.json()) as ToolConfirmResult
+
+      // Update the message in-place with the result
+      const updated = [...messages.value]
+      if (updated[messageIndex]) {
+        updated[messageIndex] = {
+          ...updated[messageIndex],
+          toolResult: json,
+        }
+        messages.value = updated
+        persistToSession()
+      }
+    } catch {
+      const updated = [...messages.value]
+      if (updated[messageIndex]) {
+        updated[messageIndex] = {
+          ...updated[messageIndex],
+          toolResult: {
+            toolName: tool,
+            success: false,
+            message: 'Network error. Please try again.',
+          },
+        }
+        messages.value = updated
+        persistToSession()
+      }
+    }
+  }
+
   // ── Save conversation to DB ────────────────────────────────────────────────
 
   async function save(title?: string): Promise<SavedConversation | null> {
@@ -236,7 +343,9 @@ export function useIssueChat(issueId: Ref<number | null>) {
     try {
       const response = await apiPost(`/api/issues/${issueId.value}/conversations`, {
         title: title ?? null,
-        messages: messages.value.map((m) => ({ role: m.role, content: m.content })),
+        messages: messages.value
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .map((m) => ({ role: m.role, content: m.content })),
       })
 
       if (!response.ok) {
@@ -315,10 +424,14 @@ export function useIssueChat(issueId: Ref<number | null>) {
     activeConversationId,
     savedConversations,
     error,
+    suggestionChips,
+    hasShownNudge,
     send,
     save,
     loadConversations,
     continueConversation,
     clearSession,
+    loadSuggestionChips,
+    confirmTool,
   }
 }

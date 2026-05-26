@@ -19,12 +19,14 @@
  *   The auto-scroll sentinel lives INSIDE the scrollable div so scrollIntoView works.
  */
 
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import type { Ref } from 'vue'
 import { useIssueChat } from '@/composables/useIssueChat'
 import ChatMessage from '@/components/issues/ChatMessage.vue'
 import ChatInput from '@/components/issues/ChatInput.vue'
+import SuggestionChips from '@/components/issues/SuggestionChips.vue'
 import SavedConversationsList from '@/components/issues/SavedConversationsList.vue'
+import CreateIssueDialog from '@/components/issues/CreateIssueDialog.vue'
 import {
   Dialog,
   DialogContent,
@@ -47,6 +49,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CheckIcon, TriangleAlertIcon, Loader2Icon } from '@lucide/vue'
+import type { Priority } from '@/types'
 
 // ── Props ──────────────────────────────────────────────────────────────────
 
@@ -69,11 +72,14 @@ const {
   activeConversationId,
   savedConversations,
   error,
+  suggestionChips,
   send,
   save,
   loadConversations,
   continueConversation,
   clearSession,
+  loadSuggestionChips,
+  confirmTool,
 } = useIssueChat(issueIdRef)
 
 // ── Auto-scroll ────────────────────────────────────────────────────────────
@@ -89,7 +95,7 @@ function scrollToBottom(): void {
 watch(messages, scrollToBottom, { deep: true })
 watch(streamingContent, scrollToBottom)
 
-// ── Load conversations when issueId becomes valid ──────────────────────────
+// ── Load conversations + chips when issueId becomes valid ──────────────────
 
 watch(
   () => props.issueId,
@@ -100,6 +106,81 @@ watch(
   },
   { immediate: true },
 )
+
+// ── Placeholder rotation ───────────────────────────────────────────────────
+
+const PLACEHOLDERS = [
+  'Ask about this issue...',
+  'Try: create a ticket for this',
+  'Ask anything about this issue...',
+]
+const currentPlaceholder = ref(PLACEHOLDERS[0])
+const isInputFocused = ref(false)
+let placeholderInterval: ReturnType<typeof setInterval> | null = null
+
+function startPlaceholderRotation(): void {
+  let idx = 0
+  placeholderInterval = setInterval(() => {
+    // Stop if messages exist or input is focused
+    if (messages.value.length > 0 || isInputFocused.value) return
+    idx = (idx + 1) % PLACEHOLDERS.length
+    currentPlaceholder.value = PLACEHOLDERS[idx]
+  }, 8000)
+}
+
+function stopPlaceholderRotation(): void {
+  if (placeholderInterval !== null) {
+    clearInterval(placeholderInterval)
+    placeholderInterval = null
+  }
+}
+
+// ── First-time onboarding tooltip ─────────────────────────────────────────
+
+const ONBOARDED_KEY = 'ai-chat-onboarded'
+const showOnboardingTooltip = ref(false)
+let tooltipTimeout: ReturnType<typeof setTimeout> | null = null
+
+function dismissTooltip(): void {
+  showOnboardingTooltip.value = false
+  if (tooltipTimeout !== null) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  try {
+    localStorage.setItem(ONBOARDED_KEY, 'true')
+  } catch {
+    // localStorage unavailable — ignore
+  }
+}
+
+// ── Lifecycle ──────────────────────────────────────────────────────────────
+
+onMounted(() => {
+  // Load suggestion chips (cached after first call)
+  void loadSuggestionChips()
+
+  // Start placeholder rotation
+  startPlaceholderRotation()
+
+  // Show first-time tooltip if not yet onboarded
+  try {
+    if (!localStorage.getItem(ONBOARDED_KEY)) {
+      showOnboardingTooltip.value = true
+      tooltipTimeout = setTimeout(dismissTooltip, 8000)
+    }
+  } catch {
+    // localStorage unavailable — skip tooltip
+  }
+})
+
+onUnmounted(() => {
+  stopPlaceholderRotation()
+  if (tooltipTimeout !== null) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+})
 
 // ── Save dialog ────────────────────────────────────────────────────────────
 
@@ -160,6 +241,49 @@ const streamingMessage = computed(() =>
     ? { role: 'assistant' as const, content: streamingContent.value }
     : null,
 )
+
+// ── Tool call handling ─────────────────────────────────────────────────────
+
+async function handleToolConfirm(
+  _messageIndex: number,
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  // Find the actual index of the tool_call message in the messages array
+  const idx = messages.value.findIndex(
+    (m) => m.role === 'tool_call' && m.toolCall?.tool === tool && !m.toolResult,
+  )
+  if (idx !== -1) {
+    await confirmTool(idx, tool, args)
+  }
+}
+
+// ── Edit & Create (opens CreateIssueDialog with prefill) ──────────────────
+
+const createDialogOpen = ref(false)
+const createDialogPrefill = ref<{
+  title?: string
+  description?: string
+  priority?: Priority
+  category_id?: number | null
+} | undefined>(undefined)
+
+function handleToolEditAndCreate(prefill: {
+  title?: string
+  description?: string
+  priority?: Priority
+  category_id?: number | null
+}): void {
+  // Set prefill BEFORE open to avoid race with the watcher in CreateIssueDialog
+  createDialogPrefill.value = prefill
+  createDialogOpen.value = true
+}
+
+// ── Chip select ────────────────────────────────────────────────────────────
+
+function handleChipSelect(text: string): void {
+  void send(text)
+}
 </script>
 
 <template>
@@ -204,12 +328,15 @@ const streamingMessage = computed(() =>
     <!-- ── Messages area ─────────────────────────────────────────────────── -->
     <div
       v-if="messages.length > 0 || streamingMessage"
-      class="max-h-64 overflow-y-auto space-y-3 rounded-lg border border-border bg-background/50 p-3"
+      class="max-h-64 space-y-3 overflow-y-auto rounded-lg border border-border bg-background/50 p-3"
     >
       <ChatMessage
         v-for="(msg, idx) in messages"
         :key="idx"
         :message="msg"
+        :issue-id="issueId ?? 0"
+        @tool-confirm="handleToolConfirm"
+        @tool-edit-and-create="handleToolEditAndCreate"
       />
 
       <!-- Live streaming message -->
@@ -220,22 +347,52 @@ const streamingMessage = computed(() =>
       />
 
       <!-- Auto-scroll sentinel -->
-      <div ref="scrollAnchor" class="h-px" />
+      <div
+        ref="scrollAnchor"
+        class="h-px"
+      />
     </div>
 
-    <!-- ── Empty state ───────────────────────────────────────────────────── -->
-    <p
+    <!-- ── Empty state — suggestion chips ────────────────────────────────── -->
+    <div
       v-else
-      class="text-center text-xs text-muted-foreground"
+      class="space-y-3"
     >
-      Ask AI anything about this issue
-    </p>
+      <SuggestionChips
+        :chips="suggestionChips"
+        @select="handleChipSelect"
+      />
+    </div>
 
-    <!-- ── Chat input ────────────────────────────────────────────────────── -->
-    <ChatInput
-      :disabled="isStreaming || !issueId"
-      @send="send"
-    />
+    <!-- ── Chat input (with first-time tooltip) ──────────────────────────── -->
+    <div class="relative">
+      <!-- First-time onboarding tooltip -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 translate-y-1"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 translate-y-1"
+      >
+        <div
+          v-if="showOnboardingTooltip"
+          class="absolute bottom-full left-0 right-0 z-10 mb-2 cursor-pointer rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
+          @click="dismissTooltip"
+        >
+          💡 You can ask the AI to create tickets and more. Just describe what you need.
+          <div class="absolute -bottom-1.5 left-4 size-3 rotate-45 border-b border-r border-border bg-popover" />
+        </div>
+      </Transition>
+
+      <ChatInput
+        :disabled="isStreaming || !issueId"
+        :placeholder="currentPlaceholder"
+        @send="send"
+        @focus="isInputFocused = true"
+        @blur="isInputFocused = false"
+      />
+    </div>
 
     <!-- ── Saved conversations list ──────────────────────────────────────── -->
     <SavedConversationsList
@@ -279,7 +436,10 @@ const streamingMessage = computed(() =>
           :disabled="saving"
           @click="confirmSave"
         >
-          <Loader2Icon v-if="saving" class="mr-2 size-4 animate-spin" />
+          <Loader2Icon
+            v-if="saving"
+            class="mr-2 size-4 animate-spin"
+          />
           Save
         </Button>
       </DialogFooter>
@@ -309,4 +469,12 @@ const streamingMessage = computed(() =>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
+
+  <!-- ── Create Issue Dialog (Edit & Create from tool call) ──────────────── -->
+  <CreateIssueDialog
+    :open="createDialogOpen"
+    :prefill="createDialogPrefill"
+    @update:open="createDialogOpen = $event"
+    @created="createDialogOpen = false"
+  />
 </template>

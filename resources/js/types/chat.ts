@@ -3,11 +3,28 @@
  * Mirrors the JSON shapes from IssueChatController and IssueConversationController.
  */
 
+export interface ToolCallData {
+  type: 'tool_call'
+  tool: string
+  arguments: Record<string, unknown>
+  requires_confirmation: boolean
+}
+
+export interface ToolConfirmResult {
+  toolName: string
+  success: boolean
+  message: string
+  data?: { id: number; title: string; [key: string]: unknown }
+}
+
 export interface ChatMessage {
   id?: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'tool_call'
   content: string
   created_at?: string
+  toolCall?: ToolCallData
+  toolResult?: ToolConfirmResult
+  showNudge?: boolean
 }
 
 export interface SavedConversation {
