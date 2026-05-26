@@ -100,7 +100,12 @@ export interface Issue {
   category: IssueCategory
   comments_count?: number
   comments?: IssueComment[]
-  can_comment?: boolean
+  can?: {
+    view: boolean
+    update: boolean
+    comment: boolean
+    delete: boolean
+  }
 }
 
 /** Filter state for the Kanban board sidebar. */

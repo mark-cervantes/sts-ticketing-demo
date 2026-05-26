@@ -103,7 +103,7 @@ class AiSettingsController extends Controller
             $settings->save();
             $settings->load('updatedBy');
 
-            Cache::forget('ai_settings.openrouter_models');
+            Cache::forget('ai_settings.models.openrouter');
             Artisan::call('queue:restart');
 
             return response()->json([
@@ -137,7 +137,7 @@ class AiSettingsController extends Controller
         $settings->load('updatedBy');
 
         // Flush cached model list when settings change.
-        Cache::forget('ai_settings.openrouter_models');
+        Cache::forget('ai_settings.models.openrouter');
 
         // Queue workers cache config at boot time. After changing AI settings,
         // signal all workers to restart so they pick up the new DB values
@@ -275,43 +275,117 @@ class AiSettingsController extends Controller
     // -------------------------------------------------------------------------
 
     /**
-     * Proxy the OpenRouter model list.
+     * Proxy the model list for the configured provider (or a named preset).
      *
-     * Only works when provider is 'openrouter' and an api_key is configured.
-     * Caches the response for 1 hour to avoid exposing the API key on every request.
-     * Returns 422 when the provider or key requirements are not met.
+     * Supports an optional `?preset=<key>` query param so the frontend can
+     * fetch models for a preset before saving it.  Without the param the saved
+     * DB settings are used (existing behaviour).
+     *
+     * Supported providers:
+     *  - openrouter  → GET https://openrouter.ai/api/v1/models
+     *  - ollama-cloud preset (custom provider with ollama base_url) → GET {base}/api/tags
+     *
+     * Results are cached for 1 hour per provider/preset.
      */
-    public function models(): JsonResponse
+    public function models(Request $request): JsonResponse
     {
         $settings = AiSetting::current();
 
-        if ($settings->provider !== 'openrouter') {
-            return response()->json(['error' => 'Model listing is only available for the openrouter provider.'], 422);
-        }
+        // ── Resolve provider, key, and base_url ──────────────────────────────
+        $presetKey = $request->query('preset');
 
-        if (empty($settings->api_key)) {
-            return response()->json(['error' => 'An API key is required to fetch the OpenRouter model list.'], 422);
-        }
+        if ($presetKey) {
+            /** @var array{label:string,description:string,provider:string,base_url:string,model:string,api_key:string|null}|null $preset */
+            $preset = config('ai-presets.'.$presetKey);
 
-        $models = Cache::remember('ai_settings.openrouter_models', 3600, function () use ($settings): mixed {
-            $response = Http::withToken((string) $settings->api_key)
-                ->timeout(15)
-                ->get('https://openrouter.ai/api/v1/models');
-
-            if ($response->failed()) {
-                return null;
+            if ($preset === null || empty($preset['api_key'])) {
+                return response()->json(['error' => 'Preset not configured.'], 422);
             }
 
-            return $response->json();
-        });
-
-        if ($models === null) {
-            Cache::forget('ai_settings.openrouter_models');
-
-            return response()->json(['error' => 'Failed to fetch models from OpenRouter.'], 422);
+            $provider = $preset['provider'];
+            $apiKey = $preset['api_key'];
+            $baseUrl = $preset['base_url'] ?? null;
+        } else {
+            $provider = $settings->provider;
+            $apiKey = $settings->api_key;
+            $baseUrl = $settings->base_url;
         }
 
-        return response()->json($models);
+        // ── OpenRouter ────────────────────────────────────────────────────────
+        if ($provider === 'openrouter') {
+            if (empty($apiKey)) {
+                return response()->json(['error' => 'An API key is required to fetch the OpenRouter model list.'], 422);
+            }
+
+            $cacheKey = 'ai_settings.models.openrouter';
+
+            $models = Cache::remember($cacheKey, 3600, function () use ($apiKey): mixed {
+                $response = Http::withToken((string) $apiKey)
+                    ->timeout(15)
+                    ->get('https://openrouter.ai/api/v1/models');
+
+                if ($response->failed()) {
+                    return null;
+                }
+
+                return $response->json();
+            });
+
+            if ($models === null) {
+                Cache::forget($cacheKey);
+
+                return response()->json(['error' => 'Failed to fetch models from OpenRouter.'], 422);
+            }
+
+            return response()->json($models);
+        }
+
+        // ── Ollama-compatible (custom provider with /v1 base_url) ─────────────
+        if ($provider === 'custom' && ! empty($baseUrl)) {
+            // Strip /v1 suffix to get the Ollama base, then call /api/tags.
+            $ollamaBase = rtrim(preg_replace('#/v1/?$#', '', (string) $baseUrl), '/');
+            $cacheKey = 'ai_settings.models.ollama.'.md5($ollamaBase);
+
+            $models = Cache::remember($cacheKey, 3600, function () use ($ollamaBase, $apiKey): mixed {
+                $http = Http::timeout(15);
+
+                if (! empty($apiKey)) {
+                    $http = $http->withToken((string) $apiKey);
+                }
+
+                $response = $http->get("$ollamaBase/api/tags");
+
+                if ($response->failed()) {
+                    return null;
+                }
+
+                // Ollama returns { models: [{ name: "gemma3:4b", ... }] }.
+                // Normalise to the same shape as OpenRouter { data: [...] }.
+                $ollamaModels = $response->json('models', []);
+
+                return [
+                    'data' => collect($ollamaModels)
+                        ->map(fn (array $m): array => [
+                            'id' => $m['name'],
+                            'name' => $m['name'],
+                            'context_length' => 0,
+                            'pricing' => ['prompt' => '0', 'completion' => '0'],
+                        ])
+                        ->values()
+                        ->all(),
+                ];
+            });
+
+            if ($models === null) {
+                Cache::forget($cacheKey);
+
+                return response()->json(['error' => 'Failed to fetch models from Ollama endpoint.'], 422);
+            }
+
+            return response()->json($models);
+        }
+
+        return response()->json(['error' => 'Model listing is only available for the openrouter provider.'], 422);
     }
 
     // -------------------------------------------------------------------------

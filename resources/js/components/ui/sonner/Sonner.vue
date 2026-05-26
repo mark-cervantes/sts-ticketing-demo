@@ -1,6 +1,4 @@
 <script lang="ts" setup>
-import type { ToasterProps } from 'vue-sonner'
-
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -10,16 +8,18 @@ import {
   XIcon,
 } from '@lucide/vue'
 import { Toaster as Sonner } from 'vue-sonner'
-import { cn } from '@/lib/utils'
-
-const props = defineProps<ToasterProps>()
-
-const { class: _class, toastOptions: _toastOptions, ...delegated } = props
 </script>
 
 <template>
   <Sonner
-    :class="cn('toaster group', props.class)"
+    class="toaster group"
+    :position="'top-right'"
+    :visible-toasts="4"
+    :duration="5000"
+    :offset="16"
+    :gap="8"
+    rich-colors
+    close-button
     :style="{
       '--normal-bg': 'var(--popover)',
       '--normal-text': 'var(--popover-foreground)',
@@ -30,9 +30,7 @@ const { class: _class, toastOptions: _toastOptions, ...delegated } = props
       classes: {
         toast: 'rounded-2xl',
       },
-      ...props.toastOptions,
     }"
-    v-bind="delegated"
   >
     <template #success-icon>
       <CircleCheckIcon class="size-4" />

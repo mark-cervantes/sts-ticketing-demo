@@ -228,26 +228,26 @@ export function useKanbanBoard() {
       return
     }
 
-    // Find and remove from source column
-    const sourceColumn = columnMap.value[fromStatusSlug]
-    if (!sourceColumn) return
-    const issueIndex = sourceColumn.findIndex((i) => i.id === issueId)
-    if (issueIndex === -1) return
+    // VueDraggable already moved the card in the local DOM arrays.
+    // We must NOT splice+unshift here — that would overwrite localIssues
+    // via the watcher and snap the card to the top of the column.
+    //
+    // Instead, find the issue in the target column (where VueDraggable
+    // placed it) and update its status fields in-place.
+    const targetColumn = columnMap.value[toStatusSlug]
+    const issueInTarget = targetColumn?.find((i) => i.id === issueId)
 
-    const issue = sourceColumn[issueIndex]
+    // Fallback: if VueDraggable hasn't synced yet, find in source
+    const sourceColumn = columnMap.value[fromStatusSlug]
+    const issue = issueInTarget ?? sourceColumn?.find((i) => i.id === issueId)
+    if (!issue) return
+
     const cachedUpdatedAt = issue.updated_at
 
-    // Optimistic: remove from source, add to target
-    sourceColumn.splice(issueIndex, 1)
-    const updatedIssue: Issue = {
-      ...issue,
-      status: toStatusSlug,
-      status_id: toStatusObj.id,
-      status_obj: toStatusObj,
-    }
-    if (columnMap.value[toStatusSlug]) {
-      columnMap.value[toStatusSlug].unshift(updatedIssue)
-    }
+    // Update status fields in-place (no array reorder)
+    issue.status = toStatusSlug
+    issue.status_id = toStatusObj.id
+    issue.status_obj = toStatusObj
 
     try {
       const response = await apiPatch(`/api/issues/${issueId}`, {
@@ -256,44 +256,49 @@ export function useKanbanBoard() {
       })
 
       if (response.status === 409) {
-        // Optimistic lock conflict — revert
-        revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error('This issue was updated by another user. Your changes were not saved.', {
-          duration: 5000,
+        toast.error('Conflict — issue was updated by someone else', {
+          description: `"${issue.title}" was reverted to ${fromStatusSlug}. Refresh and try again.`,
+          duration: 6000,
         })
+        void loadInitial()
         return
       }
 
       if (response.status === 422) {
         const errorData = (await response.json()) as { message?: string }
-        revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error(errorData.message ?? 'Validation error — status change rejected.')
+        toast.error('Status change rejected', {
+          description: errorData.message ?? `"${issue.title}" could not be moved to ${toStatusObj.name}.`,
+        })
+        void loadInitial()
+        return
+      }
+
+      if (response.status === 403) {
+        toast.error('Permission denied', {
+          description: `You don't have edit access to "${issue.title}". Ask the owner to share it with you.`,
+        })
+        void loadInitial()
         return
       }
 
       if (!response.ok) {
-        revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-        toast.error('Failed to update issue status.')
+        toast.error('Failed to move issue', {
+          description: `"${issue.title}" — server returned ${response.status}. The card was reverted.`,
+        })
+        void loadInitial()
         return
       }
 
       // Success: update the issue's updated_at from server response
       const responseData = (await response.json()) as { data: Issue }
-      const targetColumn = columnMap.value[toStatusSlug]
-      if (targetColumn) {
-        const movedIdx = targetColumn.findIndex((i) => i.id === issueId)
-        if (movedIdx !== -1) {
-          targetColumn[movedIdx] = {
-            ...targetColumn[movedIdx],
-            updated_at: responseData.data.updated_at,
-          }
-        }
-      }
+      issue.updated_at = responseData.data.updated_at
 
       toast.success(`Moved to ${toStatusObj.name}`)
     } catch {
-      revertMove(updatedIssue, fromStatusSlug, toStatusSlug, issueIndex)
-      toast.error('Network error — could not update issue status.')
+      toast.error('Network error', {
+        description: `Could not reach the server to move "${issue.title}". The card was reverted.`,
+      })
+      void loadInitial()
     }
   }
 

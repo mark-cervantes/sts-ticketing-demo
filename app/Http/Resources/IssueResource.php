@@ -85,8 +85,13 @@ class IssueResource extends JsonResource
                 ]);
             }),
 
-            // Permission gate for comment input visibility
-            'can_comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+            // Permission gates for UI affordances
+            'can' => [
+                'view' => $request->user() ? Gate::allows('view', $this->resource) : false,
+                'update' => $request->user() ? Gate::allows('update', $this->resource) : false,
+                'comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+                'delete' => $request->user() ? Gate::allows('delete', $this->resource) : false,
+            ],
         ];
     }
 }

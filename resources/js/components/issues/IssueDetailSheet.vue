@@ -56,6 +56,7 @@ import {
   RefreshCwIcon,
   TicketPlusIcon,
 } from '@lucide/vue'
+import CreateIssueDialog from '@/components/issues/CreateIssueDialog.vue'
 import { apiPost } from '@/composables/useApiFetch'
 import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
@@ -312,6 +313,31 @@ async function handleRegenerate(): Promise<void> {
   } finally {
     regenerating.value = false
   }
+}
+
+// --- Suggested follow-up ticket creation ---
+
+const followUpDialogOpen = ref(false)
+const followUpPrefill = ref<{ title?: string; description?: string; priority?: IssuePriority; category_id?: number | null }>({})
+
+function handleCreateFollowUp(): void {
+  if (!issue.value) return
+  const suggestedTitle = issue.value.suggested_next_ticket
+  if (!suggestedTitle) return
+
+  followUpPrefill.value = {
+    title: suggestedTitle,
+    description: `Follow-up from issue #${issue.value.id}: ${issue.value.title}`,
+    priority: issue.value.priority,
+    category_id: issue.value.category_id ?? null,
+  }
+  followUpDialogOpen.value = true
+}
+
+function handleFollowUpCreated(): void {
+  followUpDialogOpen.value = false
+  window.dispatchEvent(new Event('issue:created'))
+  toast.success('Follow-up ticket created')
 }
 </script>
 
@@ -606,22 +632,26 @@ async function handleRegenerate(): Promise<void> {
                 </div>
 
                 <!-- Suggested follow-up ticket card -->
-                <div
+                <button
                   v-if="issue.suggested_next_ticket"
-                  class="mt-2 flex gap-3 rounded-lg border border-border bg-muted/50 p-3"
+                  type="button"
+                  class="mt-2 flex w-full gap-3 rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="Click to create this follow-up ticket"
+                  @click="handleCreateFollowUp"
                 >
                   <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
                     <TicketPlusIcon class="size-4 text-muted-foreground" />
                   </div>
-                  <div>
+                  <div class="min-w-0 flex-1">
                     <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Suggested Follow-up Ticket
+                      <span class="ml-1 normal-case font-normal opacity-60">(click to create)</span>
                     </p>
                     <p class="mt-0.5 text-sm text-foreground">
                       {{ issue.suggested_next_ticket }}
                     </p>
                   </div>
-                </div>
+                </button>
               </div>
             </Transition>
           </template>
@@ -651,7 +681,7 @@ async function handleRegenerate(): Promise<void> {
         <CommentThread
           :comments="issue.comments ?? []"
           :issue-id="issue.id"
-          :can-comment="issue.can_comment ?? false"
+          :can-comment="issue.can?.comment ?? false"
           :comments-count="issue.comments_count"
           :issue-status="issue.status"
         />
@@ -708,6 +738,12 @@ async function handleRegenerate(): Promise<void> {
         </AlertDialogContent>
       </AlertDialog>
     </SheetContent>
+
+    <CreateIssueDialog
+      v-model:open="followUpDialogOpen"
+      :prefill="followUpPrefill"
+      @created="handleFollowUpCreated"
+    />
   </Sheet>
 </template>
 

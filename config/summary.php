@@ -14,7 +14,7 @@ return [
     | SummaryManager will automatically fall back to the "rules" driver.
     |
     */
-    'default' => env('SUMMARY_DRIVER', 'rules'),
+    'default' => env('SUMMARY_DRIVER', 'llm'),
 
     'drivers' => [
 

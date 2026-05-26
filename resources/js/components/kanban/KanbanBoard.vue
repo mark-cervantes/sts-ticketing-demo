@@ -9,7 +9,6 @@ import { useStatuses } from '@/composables/useStatuses'
 import { apiPut, apiPost } from '@/composables/useApiFetch'
 import KanbanColumn from '@/components/kanban/KanbanColumn.vue'
 import IssueDetailSheet from '@/components/issues/IssueDetailSheet.vue'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { KanbanColumnDef } from '@/types/issue'
@@ -175,144 +174,140 @@ async function handleColumnDeleted(): Promise<void> {
 </script>
 
 <template>
-  <!-- Board header with lock/unlock toggle -->
-  <div class="flex items-center gap-2 px-4 pt-3 pb-1">
-    <Button
-      variant="ghost"
-      size="sm"
-      class="gap-1.5 text-xs"
-      :class="editMode ? 'text-primary' : 'text-muted-foreground'"
-      @click="toggleEditMode"
-    >
-      <LockOpenIcon v-if="editMode" class="size-3.5" />
-      <LockIcon v-else class="size-3.5" />
-      {{ editMode ? 'Editing' : 'Edit columns' }}
-    </Button>
-    <Badge
-      v-if="editMode"
-      variant="outline"
-      class="border-primary/40 text-primary text-[10px]"
-    >
-      Edit Mode
-    </Badge>
-    <LoaderCircleIcon
-      v-if="reorderLoading"
-      class="size-3.5 animate-spin text-muted-foreground ml-1"
-    />
-  </div>
-
-  <!-- Kanban board — columns wrapped in VueDraggable for column reordering -->
-  <div class="flex flex-col gap-4 p-4 md:flex-row md:gap-4 md:overflow-x-auto">
-    <VueDraggable
-      v-model="localColumns"
-      group="kanban-columns"
-      :animation="200"
-      handle=".column-drag-handle"
-      ghost-class="opacity-40"
-      :disabled="!editMode"
-      class="flex flex-col gap-4 md:flex-row md:gap-4"
-      @end="handleColumnDragEnd"
-    >
-      <KanbanColumn
-        v-for="col in localColumns"
-        :key="col.statusId"
-        :column="col"
-        :skeleton-loading="initialLoading"
-        :edit-mode="editMode"
-        :all-columns="localColumns"
-        @load-more="handleLoadMore"
-        @select-issue="handleSelectIssue"
-        @move-issue="handleMoveIssue"
-        @column-deleted="handleColumnDeleted"
+  <div class="relative">
+    <!-- Edit mode toggle — floated top-right, zero vertical cost -->
+    <div class="absolute right-4 top-3 z-10 flex items-center gap-1.5">
+      <LoaderCircleIcon
+        v-if="reorderLoading"
+        class="size-3.5 animate-spin text-muted-foreground"
       />
-    </VueDraggable>
-
-    <!-- Add Status card (edit mode only) -->
-    <div
-      v-if="editMode"
-      class="flex min-w-[280px] shrink-0 flex-col rounded-xl border-2 border-dashed border-primary/30 bg-muted/20 dark:bg-muted/10"
-    >
-      <!-- Collapsed: show + button -->
-      <template v-if="!addingStatus">
-        <button
-          type="button"
-          class="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-muted-foreground transition-colors hover:text-primary"
-          @click="openAddStatus"
-        >
-          <PlusIcon class="size-6" />
-          <span class="text-sm font-medium">Add Status</span>
-        </button>
-      </template>
-
-      <!-- Expanded: inline form -->
-      <template v-else>
-        <div class="space-y-3 p-3">
-          <p class="text-sm font-semibold text-foreground">New Status</p>
-
-          <Input
-            v-model="newStatusName"
-            placeholder="Status name…"
-            :disabled="addStatusLoading"
-            @keydown.enter.prevent="handleCreateStatus"
-            @keydown.escape.prevent="cancelAddStatus"
-          />
-
-          <!-- Color swatches -->
-          <div class="flex flex-wrap gap-1.5">
-            <button
-              v-for="swatch in COLOR_SWATCHES"
-              :key="swatch"
-              type="button"
-              class="size-6 rounded-full border-2 transition-all hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              :style="{ backgroundColor: swatch }"
-              :class="newStatusColor === swatch ? 'border-foreground' : 'border-transparent'"
-              :aria-label="`Select color ${swatch}`"
-              @click="newStatusColor = swatch"
-            >
-              <CheckIcon
-                v-if="newStatusColor === swatch"
-                class="mx-auto size-3 text-white drop-shadow"
-              />
-            </button>
-            <input
-              v-model="newStatusColor"
-              type="color"
-              class="size-6 cursor-pointer rounded border border-input bg-transparent p-0.5"
-              aria-label="Custom color"
-            />
-          </div>
-
-          <p v-if="addStatusError" class="text-xs text-destructive">{{ addStatusError }}</p>
-
-          <div class="flex gap-2">
-            <Button
-              size="sm"
-              class="flex-1"
-              :disabled="addStatusLoading"
-              @click="handleCreateStatus"
-            >
-              <LoaderCircleIcon v-if="addStatusLoading" class="mr-1.5 size-3.5 animate-spin" />
-              Create
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              :disabled="addStatusLoading"
-              @click="cancelAddStatus"
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </template>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        :class="editMode ? 'text-primary' : 'text-muted-foreground'"
+        :title="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
+        :aria-label="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
+        :aria-pressed="editMode"
+        @click="toggleEditMode"
+      >
+        <LockOpenIcon v-if="editMode" class="size-3.5" />
+        <LockIcon v-else class="size-3.5" />
+      </Button>
     </div>
 
-    <!-- If no columns visible (all statuses filtered out) -->
-    <div
-      v-if="localColumns.length === 0 && !initialLoading && !editMode"
-      class="flex flex-1 items-center justify-center py-20 text-muted-foreground"
-    >
-      <p class="text-sm">Select at least one status filter to see issues.</p>
+    <!-- Kanban board — columns wrapped in VueDraggable for column reordering -->
+    <div class="flex flex-col gap-4 p-4 md:flex-row md:gap-4 md:overflow-x-auto">
+      <VueDraggable
+        v-model="localColumns"
+        group="kanban-columns"
+        :animation="200"
+        handle=".column-drag-handle"
+        ghost-class="opacity-40"
+        :disabled="!editMode"
+        class="flex flex-col gap-4 md:flex-row md:gap-4"
+        @end="handleColumnDragEnd"
+      >
+        <KanbanColumn
+          v-for="col in localColumns"
+          :key="col.statusId"
+          :column="col"
+          :skeleton-loading="initialLoading"
+          :edit-mode="editMode"
+          :all-columns="localColumns"
+          @load-more="handleLoadMore"
+          @select-issue="handleSelectIssue"
+          @move-issue="handleMoveIssue"
+          @column-deleted="handleColumnDeleted"
+        />
+      </VueDraggable>
+
+      <!-- Add Status card (edit mode only) -->
+      <div
+        v-if="editMode"
+        class="flex min-w-[280px] shrink-0 flex-col rounded-xl border-2 border-dashed border-primary/30 bg-muted/20 dark:bg-muted/10"
+      >
+        <!-- Collapsed: show + button -->
+        <template v-if="!addingStatus">
+          <button
+            type="button"
+            class="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-muted-foreground transition-colors hover:text-primary"
+            @click="openAddStatus"
+          >
+            <PlusIcon class="size-6" />
+            <span class="text-sm font-medium">Add Status</span>
+          </button>
+        </template>
+
+        <!-- Expanded: inline form -->
+        <template v-else>
+          <div class="space-y-3 p-3">
+            <p class="text-sm font-semibold text-foreground">New Status</p>
+
+            <Input
+              v-model="newStatusName"
+              placeholder="Status name…"
+              :disabled="addStatusLoading"
+              @keydown.enter.prevent="handleCreateStatus"
+              @keydown.escape.prevent="cancelAddStatus"
+            />
+
+            <!-- Color swatches -->
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="swatch in COLOR_SWATCHES"
+                :key="swatch"
+                type="button"
+                class="size-6 rounded-full border-2 transition-all hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                :style="{ backgroundColor: swatch }"
+                :class="newStatusColor === swatch ? 'border-foreground' : 'border-transparent'"
+                :aria-label="`Select color ${swatch}`"
+                @click="newStatusColor = swatch"
+              >
+                <CheckIcon
+                  v-if="newStatusColor === swatch"
+                  class="mx-auto size-3 text-white drop-shadow"
+                />
+              </button>
+              <input
+                v-model="newStatusColor"
+                type="color"
+                class="size-6 cursor-pointer rounded border border-input bg-transparent p-0.5"
+                aria-label="Custom color"
+              />
+            </div>
+
+            <p v-if="addStatusError" class="text-xs text-destructive">{{ addStatusError }}</p>
+
+            <div class="flex gap-2">
+              <Button
+                size="sm"
+                class="flex-1"
+                :disabled="addStatusLoading"
+                @click="handleCreateStatus"
+              >
+                <LoaderCircleIcon v-if="addStatusLoading" class="mr-1.5 size-3.5 animate-spin" />
+                Create
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                :disabled="addStatusLoading"
+                @click="cancelAddStatus"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- If no columns visible (all statuses filtered out) -->
+      <div
+        v-if="localColumns.length === 0 && !initialLoading && !editMode"
+        class="flex flex-1 items-center justify-center py-20 text-muted-foreground"
+      >
+        <p class="text-sm">Select at least one status filter to see issues.</p>
+      </div>
     </div>
   </div>
 

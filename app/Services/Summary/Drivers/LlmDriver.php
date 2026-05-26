@@ -42,9 +42,19 @@ class LlmDriver implements SummaryGeneratorInterface
         $categoryName = $issue->category?->name ?? 'general';
         $priority = is_object($issue->priority) ? $issue->priority->value : (string) $issue->priority;
 
+        $issue->loadMissing('comments.user');
+        $commentsText = $issue->comments
+            ->sortBy('created_at')
+            ->map(fn ($c) => sprintf('[%s] %s: %s', $c->created_at->format('M d H:i'), $c->user?->name ?? 'System', $c->body))
+            ->implode("\n");
+
+        if (empty($commentsText)) {
+            $commentsText = '(No comments yet)';
+        }
+
         $userMessage = str_replace(
-            ['{{category}}', '{{priority}}', '{{title}}', '{{description}}'],
-            [$categoryName, $priority, $issue->title ?? '', $issue->description ?? ''],
+            ['{{category}}', '{{priority}}', '{{title}}', '{{description}}', '{{comments}}'],
+            [$categoryName, $priority, $issue->title ?? '', $issue->description ?? '', $commentsText],
             $userTemplate,
         );
 
@@ -82,6 +92,11 @@ class LlmDriver implements SummaryGeneratorInterface
                 'LLM response missing choices[0].message.content field.',
             );
         }
+
+        // Strip markdown code fences that some models wrap around JSON output.
+        $content = preg_replace('/^\s*```(?:json)?\s*/i', '', $content);
+        $content = preg_replace('/\s*```\s*$/i', '', $content);
+        $content = trim($content);
 
         $parsed = json_decode($content, true);
 

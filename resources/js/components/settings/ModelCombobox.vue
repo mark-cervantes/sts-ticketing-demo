@@ -87,7 +87,9 @@ const filteredModels = computed(() => {
 
   if (!showAllModels.value) {
     const popularSet = new Set(POPULAR_MODELS)
-    models = models.filter((m) => popularSet.has(m.id))
+    const popular = models.filter((m) => popularSet.has(m.id))
+    // If no popular models match (e.g. Ollama provider), show all instead
+    models = popular.length > 0 ? popular : models
   }
 
   if (showFreeOnly.value) {
