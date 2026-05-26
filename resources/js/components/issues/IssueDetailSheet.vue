@@ -44,6 +44,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import CommentThread from '@/components/issues/CommentThread.vue'
 import ShareSection from '@/components/issues/ShareSection.vue'
+import IssueChatPanel from '@/components/issues/IssueChatPanel.vue'
 import {
   FlameIcon,
   MoreHorizontalIcon,
@@ -680,6 +681,12 @@ function handleFollowUpCreated(): void {
             Summary unavailable
           </p>
         </div>
+
+        <!-- AI Chat Panel — shown below AI summary when user has view permission -->
+        <IssueChatPanel
+          v-if="issue.can?.view"
+          :issue-id="issue.id"
+        />
 
         <!-- Sharing -->
         <ShareSection :issue="issue" />
