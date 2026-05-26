@@ -67,6 +67,8 @@ import {
 } from '@/components/ui/popover'
 import { getLocalTimeZone, today, type DateValue, parseDate } from '@internationalized/date'
 import { toDate } from 'reka-ui/date'
+import { usePage } from '@inertiajs/vue3'
+import type { PageProps } from '@/types'
 
 interface IssueDetailSheetProps {
   open: boolean
@@ -107,6 +109,11 @@ const localTitle = ref('')
 const localDescription = ref('')
 
 const todayDate = today(getLocalTimeZone())
+
+const page = usePage<PageProps>()
+const isOwnIssue = computed(
+  () => issue.value?.user?.id === page.props.auth.user.id,
+)
 
 // Reactive refs for SSE composable inputs
 const streamIssueId = computed(() => (props.open ? props.issueId : null))
@@ -688,7 +695,13 @@ function handleFollowUpCreated(): void {
 
         <!-- Meta info -->
         <div class="space-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
-          <p>Created by {{ issue.user.name }}</p>
+          <p>
+            Created by {{ issue.user.name }}
+            <span
+              v-if="isOwnIssue"
+              class="ml-1 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
+            >You</span>
+          </p>
           <p>Created {{ new Date(issue.created_at).toLocaleDateString() }}</p>
           <p>Last updated {{ new Date(issue.updated_at).toLocaleDateString() }}</p>
         </div>
