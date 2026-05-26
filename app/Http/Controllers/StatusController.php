@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\MigrateAndDeleteStatusRequest;
 use App\Http\Requests\StoreStatusRequest;
 use App\Http\Requests\UpdateStatusRequest;
+use App\Models\Issue;
 use App\Models\IssueStatus;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
@@ -89,6 +91,58 @@ class StatusController extends Controller
         }
 
         $status->delete();
+
+        return response()->noContent();
+    }
+
+    /**
+     * POST /api/statuses/{status}/migrate-and-delete
+     *
+     * Migrate issues to a target status (or delete them), then delete this status.
+     * Runs inside a transaction so a partial failure leaves no orphaned issues.
+     *
+     * Request body (at least one required for statuses with issues):
+     *   - { target_status_id: <int> }  — bulk-update issues to that status
+     *   - { delete_issues: true }       — bulk-delete all issues on this status
+     *
+     * Returns 409 when the status is the default (cannot delete the default).
+     * Returns 422 when the status has issues but neither key was provided.
+     */
+    public function migrateAndDelete(MigrateAndDeleteStatusRequest $request, IssueStatus $status): Response|JsonResponse
+    {
+        if ($status->is_default) {
+            return response()->json(
+                ['message' => 'Cannot delete the default status.'],
+                409
+            );
+        }
+
+        $issueCount = $status->issues()->count();
+
+        if ($issueCount > 0) {
+            $targetStatusId = $request->input('target_status_id');
+            $deleteIssues = (bool) $request->input('delete_issues', false);
+
+            // Neither option provided — caller must specify what to do with the issues
+            if (! $targetStatusId && ! $deleteIssues) {
+                return response()->json([
+                    'message' => "This status has {$issueCount} issues. Provide target_status_id or delete_issues=true.",
+                ], 422);
+            }
+
+            DB::transaction(function () use ($status, $targetStatusId, $deleteIssues): void {
+                if ($deleteIssues) {
+                    // Force-delete so the row is physically removed before the FK check on status delete.
+                    // Eloquent soft-delete would leave the row pointing at the status, triggering RESTRICT.
+                    Issue::where('status_id', $status->id)->forceDelete();
+                } else {
+                    Issue::where('status_id', $status->id)->update(['status_id' => $targetStatusId]);
+                }
+                $status->delete();
+            });
+        } else {
+            $status->delete();
+        }
 
         return response()->noContent();
     }

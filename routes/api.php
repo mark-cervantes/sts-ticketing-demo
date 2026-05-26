@@ -17,6 +17,7 @@ Route::middleware('auth')->post('issues/{issue}/comments', [CommentController::c
 Route::middleware('auth')->apiResource('categories', CategoryController::class)->only(['index', 'store', 'destroy']);
 
 Route::middleware('auth')->apiResource('statuses', StatusController::class)->only(['index', 'store', 'update', 'destroy']);
+Route::middleware('auth')->post('statuses/{status}/migrate-and-delete', [StatusController::class, 'migrateAndDelete']);
 
 Route::middleware('auth')->get('issues/{issue}/stream', IssueSseController::class);
 
