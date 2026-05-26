@@ -818,11 +818,11 @@ async function testConnection(): Promise<void> {
             />
             <p class="text-xs text-muted-foreground">
               Available variables:
-              <code class="rounded bg-muted px-1">{{'{{'}}category{{'}}'}}</code>
-              <code class="rounded bg-muted px-1">{{'{{'}}priority{{'}}'}}</code>
-              <code class="rounded bg-muted px-1">{{'{{'}}title{{'}}'}}</code>
-              <code class="rounded bg-muted px-1">{{'{{'}}description{{'}}'}}</code>
-              <code class="rounded bg-muted px-1">{{'{{'}}comments{{'}}'}}</code>
+              <code class="rounded bg-muted px-1" v-text="'{{category}}'"></code>
+              <code class="rounded bg-muted px-1" v-text="'{{priority}}'"></code>
+              <code class="rounded bg-muted px-1" v-text="'{{title}}'"></code>
+              <code class="rounded bg-muted px-1" v-text="'{{description}}'"></code>
+              <code class="rounded bg-muted px-1" v-text="'{{comments}}'"></code>
             </p>
           </div>
         </CardContent>
