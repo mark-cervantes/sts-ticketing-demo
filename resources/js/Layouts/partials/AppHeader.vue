@@ -72,7 +72,7 @@ function handleLogout(): void {
       size="icon"
       aria-label="Manage statuses"
     >
-      <Link :href="route('settings.statuses')">
+      <Link href="/settings/statuses">
         <CircleDotIcon class="size-5" />
       </Link>
     </Button>

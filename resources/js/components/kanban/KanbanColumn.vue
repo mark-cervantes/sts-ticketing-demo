@@ -48,7 +48,7 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
 </script>
 
 <template>
-  <div class="flex min-w-[280px] flex-1 flex-col rounded-xl bg-muted/50 dark:bg-muted/30">
+  <div class="kanban-column flex min-w-[280px] flex-1 flex-col rounded-xl bg-muted/50 dark:bg-muted/30">
     <!-- Column header -->
     <div class="flex items-center gap-2 px-3 py-2.5">
       <!-- Status color dot -->
