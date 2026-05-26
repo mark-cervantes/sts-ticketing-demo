@@ -221,6 +221,19 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
 
   emit('moveIssue', issueId, fromStatus, toStatus)
 }
+
+// Debounce guard so rapid taps don't spam toasts
+let lastFilterToast = 0
+
+function handleFilteredDrag(): void {
+  const now = Date.now()
+  if (now - lastFilterToast < 3000) return
+  lastFilterToast = now
+
+  toast.info('View-only issue', {
+    description: 'You don\'t have edit access to this issue. Ask the owner to share it with you.',
+  })
+}
 </script>
 
 <template>
@@ -364,6 +377,7 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
       :class="column.issues.length === 0 ? 'min-h-[120px]' : ''"
       :data-status="column.status"
       @end="handleDragEnd"
+      @filter="handleFilteredDrag"
     >
       <div
         v-for="issue in localIssues"
