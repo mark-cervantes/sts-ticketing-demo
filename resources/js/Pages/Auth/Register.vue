@@ -24,12 +24,12 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Register" />
+        <Head title="Create account" />
 
         <Card class="border-border shadow-sm">
             <CardHeader class="space-y-1 pb-4">
                 <CardTitle class="text-2xl font-bold text-foreground">
-                    Create an account
+                    Create your account
                 </CardTitle>
                 <CardDescription class="text-muted-foreground">
                     Get started with Smart Ticketing System
