@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Issue, KanbanColumnDef } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 import IssueCard from '@/components/kanban/IssueCard.vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -30,6 +31,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -37,11 +45,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { VueDraggable } from 'vue-draggable-plus'
-import { GripVerticalIcon, InboxIcon, LoaderCircleIcon, LockIcon, XIcon } from '@lucide/vue'
-import { ref, watch } from 'vue'
+import {
+  ArrowDownUpIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  GripVerticalIcon,
+  InboxIcon,
+  LoaderCircleIcon,
+  LockIcon,
+  XIcon,
+} from '@lucide/vue'
+import { onMounted, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { apiDelete, apiPut } from '@/composables/useApiFetch'
 import { useStatuses } from '@/composables/useStatuses'
+import { useColumnSort, SORT_OPTIONS } from '@/composables/useColumnSort'
+import type { SortKey } from '@/composables/useColumnSort'
+import type { AcceptableValue } from 'reka-ui'
 
 interface KanbanColumnProps {
   column: KanbanColumnDef
@@ -49,11 +69,14 @@ interface KanbanColumnProps {
   editMode?: boolean
   /** All columns — needed for migration target select (exclude self). */
   allColumns?: KanbanColumnDef[]
+  /** Whether this column should start collapsed (controlled by the board). */
+  defaultCollapsed?: boolean
 }
 
 const props = withDefaults(defineProps<KanbanColumnProps>(), {
   editMode: false,
   allColumns: () => [],
+  defaultCollapsed: false,
 })
 
 const emit = defineEmits<{
@@ -64,6 +87,25 @@ const emit = defineEmits<{
 }>()
 
 const { refresh: refreshStatuses } = useStatuses()
+const { getSortKey, setSortKey } = useColumnSort()
+
+// ── Collapse / expand ─────────────────────────────────────────────────────────
+const collapsed = ref(false)
+const localStorageKey = `kanban-col-${props.column.status}-collapsed`
+
+onMounted(() => {
+  const stored = localStorage.getItem(localStorageKey)
+  if (stored !== null) {
+    collapsed.value = stored === 'true'
+  } else {
+    collapsed.value = props.defaultCollapsed
+  }
+})
+
+function toggleCollapsed(): void {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(localStorageKey, String(collapsed.value))
+}
 
 // ── Local issues model ────────────────────────────────────────────────────────
 // vue-draggable-plus uses v-model with the default slot (not #item slots).
@@ -83,12 +125,29 @@ watch(() => props.column.issues, (newIssues) => {
   const oldIds = issueIds(localIssues.value)
   const newIds = issueIds(newIssues)
   if (oldIds !== newIds) {
-    // Issue set changed (added/removed) — rebuild localIssues
+    // Issue set changed (added/removed/filtered) — rebuild localIssues
+    // The parent already applied sorting in the columns computed, so we
+    // take the new array as-is.
     localIssues.value = [...newIssues]
   }
   // If only fields changed (same IDs), localIssues already has the same
   // object references via columnMap — no reset needed.
 }, { deep: true })
+
+// ── Sort key watcher ──────────────────────────────────────────────────────────
+// The parent computed applies sorting before emitting issues via props.
+// However, when ONLY the sort key changes (same IDs, different order),
+// the ID-set watcher above won't fire. We must watch the sort key directly
+// and re-apply sorting to localIssues to propagate the new order without
+// discarding VueDraggable's internal state.
+watch(
+  () => getSortKey(props.column.status),
+  () => {
+    // The parent computed has already re-sorted props.column.issues.
+    // Sync localIssues to match the new order.
+    localIssues.value = [...props.column.issues]
+  },
+)
 
 // ── Inline rename ─────────────────────────────────────────────────────────────
 const renaming = ref(false)
@@ -251,6 +310,18 @@ function handleFilteredDrag(): void {
     description: 'You don\'t have edit access to this issue. Ask the owner to share it with you.',
   })
 }
+
+// ── Sort helpers ──────────────────────────────────────────────────────────────
+function handleSortChange(value: AcceptableValue): void {
+  if (typeof value === 'string') {
+    setSortKey(props.column.status, value as SortKey)
+  }
+}
+
+function currentSortLabel(): string {
+  const key = getSortKey(props.column.status)
+  return SORT_OPTIONS.find((o) => o.key === key)?.label ?? 'Priority'
+}
 </script>
 
 <template>
@@ -295,12 +366,55 @@ function handleFilteredDrag(): void {
         </h3>
       </template>
 
-      <!-- Issue count badge -->
+      <!-- Issue count badge — shows server-side total from pagination meta -->
       <span
-        class="flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground"
+        class="flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-medium text-muted-foreground"
       >
-        {{ column.issues.length }}
+        {{ column.totalCount }}
       </span>
+
+      <!-- Sort dropdown — subtle, non-edit-mode -->
+      <DropdownMenu v-if="!editMode">
+        <DropdownMenuTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6 shrink-0 text-muted-foreground/60 hover:text-muted-foreground"
+            :title="`Sort: ${currentSortLabel()}`"
+            aria-label="Sort column"
+          >
+            <ArrowDownUpIcon class="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" class="w-44">
+          <DropdownMenuRadioGroup
+            :model-value="getSortKey(column.status)"
+            @update:model-value="handleSortChange"
+          >
+            <DropdownMenuRadioItem
+              v-for="opt in SORT_OPTIONS"
+              :key="opt.key"
+              :value="opt.key"
+              class="text-xs"
+            >
+              {{ opt.label }}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <!-- Collapse toggle (non-edit-mode only) -->
+      <button
+        v-if="!editMode"
+        type="button"
+        class="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        :aria-label="collapsed ? `Expand ${column.label} column` : `Collapse ${column.label} column`"
+        :title="collapsed ? `Expand ${column.label}` : `Collapse ${column.label}`"
+        @click="toggleCollapsed"
+      >
+        <ChevronRightIcon v-if="collapsed" class="size-3.5" />
+        <ChevronDownIcon v-else class="size-3.5" />
+      </button>
 
       <!-- Delete button (edit mode only) -->
       <template v-if="editMode">
@@ -372,16 +486,36 @@ function handleFilteredDrag(): void {
       </template>
     </div>
 
-    <!-- Skeleton loading state -->
-    <div v-if="skeletonLoading" class="space-y-2 px-2 pb-2">
+    <!-- Collapsed summary row — visible only when collapsed and not loading -->
+    <div
+      v-if="collapsed && !skeletonLoading"
+      class="px-3 pb-3"
+    >
+      <button
+        type="button"
+        class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/30 py-2 text-xs text-muted-foreground transition-colors hover:border-muted-foreground/60 hover:text-foreground"
+        :aria-label="`Show ${column.totalCount} ${column.label} issue${column.totalCount === 1 ? '' : 's'}`"
+        @click="toggleCollapsed"
+      >
+        <ChevronDownIcon class="size-3.5" />
+        Show {{ column.totalCount }} issue{{ column.totalCount === 1 ? '' : 's' }}
+      </button>
+    </div>
+
+    <!-- Skeleton loading state — hidden when collapsed -->
+    <div v-if="skeletonLoading" v-show="!collapsed" class="space-y-2 px-2 pb-2">
       <Skeleton class="h-28 w-full rounded-lg" />
       <Skeleton class="h-24 w-full rounded-lg" />
       <Skeleton class="h-20 w-full rounded-lg" />
     </div>
 
-    <!-- Card list with drag-drop (disabled in edit mode) -->
+    <!-- Card list with drag-drop (disabled in edit mode).
+         NOTE: v-show (NOT v-if) is intentional here.
+         v-if would destroy the SortableJS group registration, breaking
+         cross-column drag-to-collapsed-column. v-show keeps the element
+         in the DOM so SortableJS can still receive drops. -->
     <VueDraggable
-      v-else
+      v-show="!collapsed && !skeletonLoading"
       v-model="localIssues"
       group="kanban"
       :animation="200"
@@ -419,17 +553,17 @@ function handleFilteredDrag(): void {
       </div>
     </VueDraggable>
 
-    <!-- Empty state (shown when no items and not loading) -->
+    <!-- Empty state (shown when no items, not loading, and not collapsed) -->
     <div
-      v-if="!skeletonLoading && column.issues.length === 0"
+      v-if="!collapsed && !skeletonLoading && column.issues.length === 0"
       class="flex flex-col items-center justify-center py-8 text-muted-foreground"
     >
       <InboxIcon class="mb-2 size-8 opacity-40" />
       <p class="text-xs">No issues</p>
     </div>
 
-    <!-- Load more button -->
-    <div v-if="column.hasMore && !skeletonLoading" class="px-2 pb-2">
+    <!-- Load more button (hidden when collapsed) -->
+    <div v-if="!collapsed && column.hasMore && !skeletonLoading" class="px-2 pb-2">
       <Button
         variant="ghost"
         size="sm"

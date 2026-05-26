@@ -6,10 +6,12 @@ import {
   AlertTriangleIcon,
   TagIcon,
   BarChart3Icon,
+  UserIcon,
   XIcon,
 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -28,12 +30,14 @@ const emit = defineEmits<{
 
 const {
   filters,
+  myTickets,
   categories,
   categoriesLoading,
   fetchCategories,
   toggleStatus,
   togglePriority,
   setCategory,
+  toggleMyTickets,
   clearFilters,
 } = useIssueFilters()
 
@@ -61,6 +65,7 @@ function handleCategoryChange(value: string | number | bigint | Record<string, u
 
 const hasActiveFilters = computed(() => {
   return (
+    myTickets.value === true ||
     filters.value.statuses.length < statuses.value.length ||
     filters.value.priorities.length > 0 ||
     filters.value.category !== null
@@ -80,6 +85,26 @@ const hasActiveFilters = computed(() => {
 
     <!-- Filter sections -->
     <nav class="flex-1 space-y-6 overflow-y-auto px-4 pb-4">
+
+      <!-- MY TICKETS — top of sidebar, above all other filters -->
+      <div>
+        <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <UserIcon class="size-3.5" />
+          My Tickets
+        </h3>
+        <div class="flex items-center justify-between rounded-lg px-1 py-0.5">
+          <span class="text-sm text-foreground">Show only mine</span>
+          <Switch
+            :checked="myTickets"
+            aria-label="Show only my tickets"
+            @update:checked="toggleMyTickets"
+          />
+        </div>
+        <p v-if="myTickets" class="mt-1.5 text-[11px] text-muted-foreground">
+          Filtering to your tickets only
+        </p>
+      </div>
+
       <!-- Status filter — toggles hide/show entire columns -->
       <div>
         <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

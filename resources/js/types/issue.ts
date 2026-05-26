@@ -160,6 +160,10 @@ export interface KanbanColumnDef {
   isDefault: boolean
   /** Number of issues in this column (for delete-with-migration modal). */
   issueCount: number
+  /** Whether this column represents the "resolved" status (slug-based). */
+  isResolved: boolean
+  /** Server-side total count from pagination meta — accurate even when only a page is loaded. */
+  totalCount: number
 }
 
 /** Priority metadata for display & badge styling. */

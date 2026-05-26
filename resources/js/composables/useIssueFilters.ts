@@ -13,6 +13,19 @@ const filters = ref<IssueFilters>({
   category: null,
 })
 
+/**
+ * "My Tickets" toggle — client-side only filter.
+ * Module-scoped singleton so it survives component re-mounts.
+ * Persisted in localStorage as 'kanban-filter-my-tickets'.
+ */
+const myTickets = ref<boolean>((() => {
+  try {
+    return localStorage.getItem('kanban-filter-my-tickets') === 'true'
+  } catch {
+    return false
+  }
+})())
+
 const categories = ref<Category[]>([])
 const categoriesLoading = ref(false)
 
@@ -75,6 +88,19 @@ function setCategory(slug: string | null): void {
   filters.value.category = slug
 }
 
+/**
+ * Toggle "My Tickets" client-side filter.
+ * Persists state to localStorage immediately.
+ */
+function toggleMyTickets(): void {
+  myTickets.value = !myTickets.value
+  try {
+    localStorage.setItem('kanban-filter-my-tickets', myTickets.value ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
 function clearFilters(): void {
   const { statuses: allStatuses } = useStatuses()
   filters.value = {
@@ -82,11 +108,19 @@ function clearFilters(): void {
     priorities: [],
     category: null,
   }
+  // Also reset "My Tickets"
+  myTickets.value = false
+  try {
+    localStorage.setItem('kanban-filter-my-tickets', 'false')
+  } catch {
+    // ignore
+  }
 }
 
 export function useIssueFilters() {
   return {
     filters,
+    myTickets,
     categories,
     categoriesLoading,
     fetchCategories,
@@ -94,6 +128,7 @@ export function useIssueFilters() {
     toggleStatus,
     togglePriority,
     setCategory,
+    toggleMyTickets,
     clearFilters,
   }
 }
