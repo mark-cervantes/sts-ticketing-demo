@@ -9,7 +9,6 @@ import { useStatuses } from '@/composables/useStatuses'
 import { apiPut, apiPost } from '@/composables/useApiFetch'
 import KanbanColumn from '@/components/kanban/KanbanColumn.vue'
 import IssueDetailSheet from '@/components/issues/IssueDetailSheet.vue'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { KanbanColumnDef } from '@/types/issue'
@@ -176,28 +175,22 @@ async function handleColumnDeleted(): Promise<void> {
 
 <template>
   <!-- Board header with lock/unlock toggle -->
-  <div class="flex items-center gap-2 px-4 pt-3 pb-1">
+  <div class="flex items-center gap-1.5 px-4 pt-3 pb-1">
     <Button
       variant="ghost"
-      size="sm"
-      class="gap-1.5 text-xs"
+      size="icon-sm"
       :class="editMode ? 'text-primary' : 'text-muted-foreground'"
+      :title="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
+      :aria-label="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
+      :aria-pressed="editMode"
       @click="toggleEditMode"
     >
       <LockOpenIcon v-if="editMode" class="size-3.5" />
       <LockIcon v-else class="size-3.5" />
-      {{ editMode ? 'Editing' : 'Edit columns' }}
     </Button>
-    <Badge
-      v-if="editMode"
-      variant="outline"
-      class="border-primary/40 text-primary text-[10px]"
-    >
-      Edit Mode
-    </Badge>
     <LoaderCircleIcon
       v-if="reorderLoading"
-      class="size-3.5 animate-spin text-muted-foreground ml-1"
+      class="size-3.5 animate-spin text-muted-foreground"
     />
   </div>
 

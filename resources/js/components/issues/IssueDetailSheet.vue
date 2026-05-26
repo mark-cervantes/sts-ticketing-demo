@@ -56,6 +56,7 @@ import {
   RefreshCwIcon,
   TicketPlusIcon,
 } from '@lucide/vue'
+import { useCreateIssue } from '@/composables/useCreateIssue'
 import { apiPost } from '@/composables/useApiFetch'
 import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
@@ -311,6 +312,35 @@ async function handleRegenerate(): Promise<void> {
     toast.error('Network error')
   } finally {
     regenerating.value = false
+  }
+}
+
+// --- Suggested follow-up ticket creation ---
+
+const { form: followUpForm, isSubmitting: followUpSubmitting, submit: submitFollowUp, resetForm: resetFollowUpForm } = useCreateIssue()
+
+async function handleCreateFollowUp(): Promise<void> {
+  if (!issue.value || followUpSubmitting.value) return
+
+  const suggestedTitle = issue.value.suggested_next_ticket
+  if (!suggestedTitle) return
+
+  // Pre-fill form from parent issue context
+  followUpForm.value.title = suggestedTitle
+  followUpForm.value.description = `Follow-up from issue #${issue.value.id}: ${issue.value.title}`
+  followUpForm.value.priority = issue.value.priority
+  if (issue.value.category_id) {
+    followUpForm.value.category_id = issue.value.category_id
+  }
+
+  const created = await submitFollowUp()
+
+  if (created) {
+    toast.success('Follow-up ticket created')
+    window.dispatchEvent(new Event('issue:created'))
+    resetFollowUpForm()
+  } else {
+    toast.error('Failed to create follow-up ticket')
   }
 }
 </script>
@@ -606,22 +636,28 @@ async function handleRegenerate(): Promise<void> {
                 </div>
 
                 <!-- Suggested follow-up ticket card -->
-                <div
+                <button
                   v-if="issue.suggested_next_ticket"
-                  class="mt-2 flex gap-3 rounded-lg border border-border bg-muted/50 p-3"
+                  type="button"
+                  :disabled="followUpSubmitting"
+                  class="mt-2 flex w-full gap-3 rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                  :title="followUpSubmitting ? 'Creating…' : 'Click to create this follow-up ticket'"
+                  @click="handleCreateFollowUp"
                 >
                   <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <TicketPlusIcon class="size-4 text-muted-foreground" />
+                    <Loader2Icon v-if="followUpSubmitting" class="size-4 animate-spin text-muted-foreground" />
+                    <TicketPlusIcon v-else class="size-4 text-muted-foreground" />
                   </div>
-                  <div>
+                  <div class="min-w-0 flex-1">
                     <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Suggested Follow-up Ticket
+                      <span class="ml-1 normal-case font-normal opacity-60">(click to create)</span>
                     </p>
                     <p class="mt-0.5 text-sm text-foreground">
                       {{ issue.suggested_next_ticket }}
                     </p>
                   </div>
-                </div>
+                </button>
               </div>
             </Transition>
           </template>
