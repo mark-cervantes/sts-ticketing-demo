@@ -99,6 +99,15 @@ class AiSettingsController extends Controller
                 : ($preset['model'] ?: null);
             $settings->api_key = $preset['api_key'];
             $settings->active_preset = $validated['preset'];
+
+            if (array_key_exists('system_prompt', $validated)) {
+                $settings->system_prompt = $validated['system_prompt'] ?: null;
+            }
+
+            if (array_key_exists('user_prompt', $validated)) {
+                $settings->user_prompt = $validated['user_prompt'] ?: null;
+            }
+
             $settings->updated_by = $request->user()->id;
             $settings->save();
             $settings->load('updatedBy');
@@ -127,6 +136,14 @@ class AiSettingsController extends Controller
 
         if (is_string($incomingKey) && $incomingKey !== '') {
             $settings->api_key = $incomingKey;
+        }
+
+        if (array_key_exists('system_prompt', $validated)) {
+            $settings->system_prompt = $validated['system_prompt'] ?: null;
+        }
+
+        if (array_key_exists('user_prompt', $validated)) {
+            $settings->user_prompt = $validated['user_prompt'] ?: null;
         }
 
         // Manual update clears any active preset.
@@ -415,6 +432,10 @@ class AiSettingsController extends Controller
             'api_key_masked' => $apiKeyMasked,
             'model' => $settings->model,
             'active_preset' => $settings->active_preset,
+            'system_prompt' => $settings->system_prompt,
+            'user_prompt' => $settings->user_prompt,
+            'default_system_prompt' => config('prompts.summary.system'),
+            'default_user_prompt' => config('prompts.summary.user'),
             'updated_by' => $settings->updatedBy ? [
                 'id' => $settings->updatedBy->id,
                 'name' => $settings->updatedBy->name,

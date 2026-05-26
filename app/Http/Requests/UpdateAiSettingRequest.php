@@ -45,6 +45,8 @@ class UpdateAiSettingRequest extends FormRequest
             return [
                 'preset' => ['required', 'string', 'max:100'],
                 'model' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'system_prompt' => ['sometimes', 'nullable', 'string', 'max:5000'],
+                'user_prompt' => ['sometimes', 'nullable', 'string', 'max:5000'],
             ];
         }
 
@@ -53,6 +55,8 @@ class UpdateAiSettingRequest extends FormRequest
             'base_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'api_key' => ['sometimes', 'nullable', 'string', 'max:500'],
             'model' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'system_prompt' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'user_prompt' => ['sometimes', 'nullable', 'string', 'max:5000'],
         ];
     }
 

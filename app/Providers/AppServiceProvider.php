@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\AiSetting;
+use App\Models\Comment;
+use App\Observers\CommentObserver;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -23,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        Comment::observe(CommentObserver::class);
 
         // Force HTTPS in production — TLS terminates at the reverse proxy (Traefik/Caddy),
         // so Laravel sees plain HTTP and generates http:// URLs without this.

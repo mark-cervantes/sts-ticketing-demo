@@ -4,6 +4,7 @@ namespace App\Services\Summary\Drivers;
 
 use App\Contracts\SummaryGeneratorInterface;
 use App\Exceptions\SummaryGenerationException;
+use App\Models\AiSetting;
 use App\Models\Issue;
 use App\Services\Summary\SummaryResult;
 use Illuminate\Http\Client\ConnectionException;
@@ -35,9 +36,9 @@ class LlmDriver implements SummaryGeneratorInterface
         $model = (string) config('summary.drivers.llm.model');
         $timeout = (int) config('summary.drivers.llm.timeout', 30);
 
-        $prompts = config('prompts.summary');
-        $systemMessage = $prompts['system'] ?? 'You are a helpful assistant.';
-        $userTemplate = $prompts['user'] ?? '{{title}}\n{{description}}';
+        $settings = AiSetting::current();
+        $systemMessage = $settings->effective_system_prompt;
+        $userTemplate = $settings->effective_user_prompt;
 
         $categoryName = $issue->category?->name ?? 'general';
         $priority = is_object($issue->priority) ? $issue->priority->value : (string) $issue->priority;
