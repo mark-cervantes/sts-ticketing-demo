@@ -31,6 +31,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings/statuses', function () {
         return Inertia::render('Settings/StatusSettings');
     })->name('settings.statuses');
+
+    Route::get('/settings/categories', fn () => Inertia::render('Settings/CategorySettings'))->name('settings.categories');
 });
 
 require __DIR__.'/auth.php';

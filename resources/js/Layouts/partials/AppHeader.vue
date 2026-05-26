@@ -79,12 +79,14 @@ function handleLogout(): void {
 
     <!-- Manage Categories -->
     <Button
+      as-child
       variant="ghost"
       size="icon"
       aria-label="Manage categories"
-      @click="onOpenCategories?.()"
     >
-      <TagIcon class="size-5" />
+      <Link href="/settings/categories">
+        <TagIcon class="size-5" />
+      </Link>
     </Button>
 
     <!-- Dark mode toggle -->
