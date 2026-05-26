@@ -9,12 +9,18 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
+import { computed } from 'vue'
 import { Toaster as Sonner } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<ToasterProps>()
 
-const { class: _class, toastOptions: _toastOptions, ...delegated } = props
+// Build delegated reactively — the old destructure was a one-shot snapshot
+const delegated = computed(() => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { class: _c, toastOptions: _t, ...rest } = props
+  return rest
+})
 </script>
 
 <template>
