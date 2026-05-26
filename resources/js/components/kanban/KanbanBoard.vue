@@ -58,8 +58,8 @@ function handleSheetOpenChange(value: boolean): void {
   }
 }
 
-function handleMoveIssue(issueId: number, fromStatus: string, toStatus: string): void {
-  void moveIssue(issueId, fromStatus, toStatus)
+function handleMoveIssue(issueId: number, fromStatus: string, toStatus: string, dropIndex: number): void {
+  void moveIssue(issueId, fromStatus, toStatus, dropIndex)
 }
 
 // ── Edit mode ─────────────────────────────────────────────────────────────────

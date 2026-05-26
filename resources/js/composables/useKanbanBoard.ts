@@ -219,6 +219,7 @@ export function useKanbanBoard() {
     issueId: number,
     fromStatusSlug: string,
     toStatusSlug: string,
+    dropIndex = -1,
   ): Promise<void> {
     if (fromStatusSlug === toStatusSlug) return
 
@@ -295,7 +296,7 @@ export function useKanbanBoard() {
 
       // Sync columnMap to match what VueDraggable already did to localIssues:
       // 1. Remove from source column
-      // 2. Add to target column (if not already there)
+      // 2. Insert into target column at the exact drop position
       // This keeps columnMap in sync so the watcher's ID-set comparison
       // doesn't trigger a reset that would snap the card to a wrong position.
       if (sourceColumn) {
@@ -305,7 +306,11 @@ export function useKanbanBoard() {
         }
       }
       if (targetColumn && !targetColumn.find((i) => i.id === issueId)) {
-        targetColumn.push(issue)
+        if (dropIndex >= 0 && dropIndex <= targetColumn.length) {
+          targetColumn.splice(dropIndex, 0, issue)
+        } else {
+          targetColumn.push(issue)
+        }
       }
 
       toast.success(`Moved to ${toStatusObj.name}`)

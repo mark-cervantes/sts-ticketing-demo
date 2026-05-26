@@ -58,7 +58,7 @@ const props = withDefaults(defineProps<KanbanColumnProps>(), {
 
 const emit = defineEmits<{
   loadMore: [statusSlug: string]
-  moveIssue: [issueId: number, fromStatusSlug: string, toStatusSlug: string]
+  moveIssue: [issueId: number, fromStatusSlug: string, toStatusSlug: string, dropIndex: number]
   selectIssue: [issueId: number]
   columnDeleted: []
 }>()
@@ -226,7 +226,7 @@ async function handleMigrateDelete(): Promise<void> {
  * Both carry `data-status` attributes set on the VueDraggable element.
  * `evt.item` is the dragged card wrapper div, which carries `data-issue-id`.
  */
-function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElement }): void {
+function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElement; newIndex?: number }): void {
   const fromStatus = evt.from.dataset.status
   const toStatus = evt.to.dataset.status
 
@@ -236,7 +236,7 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
   const issueId = Number(evt.item.dataset.issueId)
   if (!issueId || isNaN(issueId)) return
 
-  emit('moveIssue', issueId, fromStatus, toStatus)
+  emit('moveIssue', issueId, fromStatus, toStatus, evt.newIndex ?? -1)
 }
 
 // Debounce guard so rapid taps don't spam toasts
