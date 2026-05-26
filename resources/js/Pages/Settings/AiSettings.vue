@@ -185,14 +185,20 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-async function loadOpenRouterModels(): Promise<void> {
+async function loadModels(): Promise<void> {
   // Idempotency guards: already loading or already fetched
   if (modelsLoading.value) return
   if (openRouterModels.value.length > 0) return
 
+  // Pass preset key so the backend can resolve API key before saving
+  const presetKey = activePresetKey.value
+  const url = presetKey
+    ? `/api/settings/ai/models?preset=${encodeURIComponent(presetKey)}`
+    : '/api/settings/ai/models'
+
   modelsLoading.value = true
   try {
-    const resp = await apiFetch<{ data: OpenRouterModel[] }>('/api/settings/ai/models')
+    const resp = await apiFetch<{ data: OpenRouterModel[] }>(url)
     if (Array.isArray(resp.data)) {
       openRouterModels.value = resp.data
     }
@@ -208,6 +214,8 @@ function selectPreset(presetKey: string): void {
   testResult.value = null
   const preset = availablePresets.value.find((p) => p.key === presetKey)
   presetModelOverride.value = preset?.model ?? ''
+  // Reset model list so the new preset's models can lazy-load
+  openRouterModels.value = []
 }
 
 function onModeChange(value: string | number | bigint | Record<string, unknown> | null): void {
@@ -527,7 +535,7 @@ async function testConnection(): Promise<void> {
                       :models="openRouterModels"
                       :loading="modelsLoading"
                       :placeholder="preset.model"
-                      :on-open="loadOpenRouterModels"
+                      :on-open="loadModels"
                     />
 
                     <!-- Plain text input for non-OpenRouter presets -->
@@ -667,7 +675,7 @@ async function testConnection(): Promise<void> {
               :models="openRouterModels"
               :loading="modelsLoading"
               placeholder="google/gemini-2.5-flash"
-              :on-open="loadOpenRouterModels"
+              :on-open="loadModels"
             />
             <p class="text-xs text-muted-foreground">
               Search or type any OpenRouter model ID directly.
