@@ -2224,29 +2224,51 @@ That habit will help you avoid both under- and over-abstracting your own code.
 
 ## §7 Enums as Domain Language
 
-### What PHP enums are
+### NestJS translation first
 
-PHP 8.1 introduced backed enums: enums where each case has an associated string
-or integer value. Before enums existed, developers used constants or strings
-directly, which produced stringly-typed bugs.
+If you are used to TypeScript enums or union types in NestJS DTOs, PHP backed
+enums fill a similar role — but in this project they do more than define
+allowed values. They also carry **behavior**.
 
-```php
-// BAD — pre-enum style
-if ($issue->priority === 'hihg') { ... }  // typo — PHP doesn't catch this
-```
+Think of them as:
 
-With enums:
+- type-safe vocabulary
+- tiny domain objects
+- reusable decision helpers
 
-```php
-// GOOD — enum-based
-if ($issue->priority === Priority::High) { ... }  // IDE catches typos
-```
+That third point is the important one.
 
-### The enums in this project
+### The enums that still exist — and the concept that became a model
 
-Open each file in `app/Enums/` and read the cases and methods.
+Current enum files:
 
-**`Priority`** — defines `Low`, `Medium`, `High`, `Critical`:
+- `Priority`
+- `Permission`
+- `Visibility`
+- `SummaryStatus`
+
+Notice what is **not** an enum anymore: issue workflow status. That concept is
+now modeled by `IssueStatus` (a database-backed model) instead of a static
+enum.
+
+That distinction is architecturally meaningful:
+
+- use an **enum** when the value set is fixed by code
+- use a **model/table** when the value set must be configurable at runtime
+
+This repo is a great teaching example because it contains both patterns.
+
+### `Priority` — fixed business vocabulary with behavior
+
+`Priority` is a classic enum fit because the allowed values are stable:
+
+- low
+- medium
+- high
+- critical
+
+And it owns behavior:
+
 ```php
 public function needsAttention(): bool
 {
@@ -2254,529 +2276,551 @@ public function needsAttention(): bool
 }
 ```
 
-The enum carries behavior. When you call `$priority->needsAttention()`, the
-logic is colocated with the type. You do not need an external helper.
+That means the type does not just hold data; it answers a domain question.
 
-**`Permission`** — defines `View`, `Comment`, `Edit`:
+### `Permission` — the permission ladder encoded in the type
+
+`Permission` is the best example of enums as domain language in this app.
+
 ```php
-public function canComment(): bool { return $this === self::Comment || $this === self::Edit; }
-public function canEdit(): bool    { return $this === self::Edit; }
+public function canComment(): bool
+public function canEdit(): bool
 ```
 
-This is the **permission ladder** encoded in the type system. The Policy
-calls `$share->permission->canEdit()` — the answer is self-contained in the
-enum. You cannot accidentally check the wrong condition.
+The ladder:
 
-**`SummaryStatus`** — defines `Pending`, `Processing`, `Ready`, `Failed`.
-These represent the state machine of the async AI summary pipeline. The four
-states map to database transitions managed by the job.
+```text
+view -> comment -> edit
+```
 
-### Why enums matter architecturally
+is implemented once, inside the enum, and then reused everywhere:
 
-1. **Type safety at the PHP level** — Invalid values are impossible to create
-   at runtime when the type system is enforced.
-2. **Database casting** — `'priority' => Priority::class` in `casts()` means
-   Eloquent automatically converts DB strings to enum cases when reading and
-   back to strings when writing. No manual conversion anywhere.
-3. **Rule validation** — `Rule::enum(Priority::class)` in Form Requests
-   validates incoming API values against the enum's cases automatically.
-4. **Behavior encapsulation** — `needsAttention()`, `canEdit()` are not
-   helper functions; they are methods of the type.
+- `IssuePolicy`
+- `IssueShare` casts
+- Form Request validation
+- tests
+
+That is much better than repeating string comparisons across the codebase.
+
+### `Visibility` and `SummaryStatus` — small but important
+
+`Visibility` is intentionally tiny:
+
+- private
+- public
+
+Why no `shared` value? Because sharing is modeled by a separate relationship
+table, not by overloading the visibility field.
+
+`SummaryStatus` models the async summary lifecycle:
+
+- pending
+- processing
+- ready
+- failed
+
+This enum is especially useful because it represents a mini state machine.
+
+### Where enums integrate with the framework
+
+Enums in this app participate in three layers at once:
+
+1. **Validation** — `Rule::enum(...)`
+2. **Persistence** — Eloquent casts
+3. **Behavior** — enum methods like `needsAttention()` / `canEdit()`
+
+This makes them a powerful bridge between transport, storage, and business
+logic.
+
+### Why `IssueStatus` is not an enum anymore
+
+This branch introduces configurable statuses via the `statuses` table and
+`IssueStatus` model.
+
+That is an excellent architecture lesson:
+
+> **If users/admins need to create, rename, recolor, or reorder values at runtime, the concept probably should not be an enum.**
+
+Status is now runtime-configurable because the app needs:
+
+- CRUD for statuses
+- sorting (`sort_order`)
+- default status selection (`is_default`)
+- color metadata
+- migration/deletion workflows
+
+An enum would make all of that rigid and code-bound.
 
 ### Reading exercise for §7
 
-1. What does `Status::tryFrom('invalid')` return? Why is `tryFrom()` safer
-   than `from()` in the context of user-supplied input? Trace how this is used
-   in `scopeFilterByStatus`.
-2. The `SummaryStatus` enum has four cases. Draw a state diagram: which
-   transitions are valid? (Hint: read `GenerateSummaryJob::handle()` to see the
-   actual transitions.)
-3. The `Visibility` enum only has `Private` and `Public`. Why is that enough?
-   What does the `shares` table add that a third visibility level (e.g.,
-   `Shared`) would not?
+1. Open `Priority`, `Permission`, `Visibility`, and `SummaryStatus`. For each,
+   answer: “Why is this still an enum instead of a table?”
+2. Open `IssueStatus` and compare it mentally to the enums. Which requirements
+   force it to be a model?
+3. Find one place where `Priority` is used in validation, one place in a model
+   cast, and one place in domain logic.
+4. Explain why `Permission::canComment()` is better than checking raw strings in
+   `IssuePolicy`.
 
 ---
 
 ## §8 API Resources
 
-### The problem without resources
+### NestJS translation first
 
-Without an API resource, you might return `$issue->toArray()` or `$issue` directly.
-Problems:
-- Exposes every column, including internal ones (e.g., `deleted_at`).
-- Exposes enum values as whatever Eloquent returns (could be enum instances, not strings).
-- No consistent structure between list and detail responses.
-- No computed fields (like `can_comment`).
-- Cannot conditionally include related data.
+Laravel `JsonResource` is closest to a response serializer/presenter in a NestJS
+project. It sits between your internal domain objects and the JSON contract sent
+to the frontend.
 
-### IssueResource — the response contract
+If you skip this layer and just return models directly, you leak persistence
+shape into the API.
 
-Open `app/Http/Resources/IssueResource.php`.
+### The real job of `IssueResource`
 
-```php
-return [
-    'id'             => $this->id,
-    'priority'       => $this->priority->value,   // "high", not Priority::High
-    'summary_status' => $this->summary_status->value,
-    'deadline_at'    => $this->deadline_at?->toIso8601String(),
-    'user'           => ['id' => ..., 'name' => ...],
-    'category'       => ['id' => ..., 'name' => ..., 'slug' => ...],
-    // ...
-    'can_comment' => Gate::allows('comment', $this->resource),
-];
+`IssueResource` is doing more than “convert model to array.” It is defining the
+frontend contract.
+
+That includes:
+
+- exposing enum values as strings
+- flattening/correcting dates
+- embedding nested user/category/status data
+- adding computed permission fields
+- including comments only when they are loaded
+- preserving some backward compatibility (`status` slug string)
+
+### Important current detail: status is both legacy-friendly and richer
+
+This branch's `IssueResource` returns:
+
+- `status` -> status slug string
+- `status_id` -> integer FK
+- `status_obj` -> full nested object with name/slug/color/sort order/default
+
+That tells you the API is evolving while keeping consumers stable.
+
+This is a subtle but very realistic architecture pattern:
+
+> The resource layer is where you preserve compatibility while moving internal models forward.
+
+### Why nested objects are returned
+
+Instead of only returning:
+
+```json
+{ "user_id": 1, "category_id": 2, "status_id": 3 }
 ```
 
-**Key design decisions in this resource:**
+the resource also returns nested objects.
 
-1. **`$this->priority->value`** — converts the enum case to its string value
-   (`"high"`) before sending. The frontend receives a clean string, not a PHP
-   object.
+That reduces extra round trips and keeps the UI simple. The Kanban board does
+not need to refetch user/category/status metadata for each issue.
 
-2. **`$this->deadline_at?->toIso8601String()`** — the null-safe operator (`?->`)
-   handles the fact that `deadline_at` is nullable. If null, the field appears
-   as `null` in JSON. `toIso8601String()` produces `"2026-06-01T12:00:00+00:00"`
-   — a format any frontend can parse reliably.
+### `whenLoaded()` and `mergeWhen()` are important Laravel idioms
 
-3. **Inline related data** — `'user'` and `'category'` are embedded as small
-   objects, not as IDs requiring a second API call. The frontend gets everything
-   it needs in one response.
+`whenLoaded('comments', ...)` means:
 
-4. **`can_comment`** — a **computed permission field** exposed to the client.
-   The frontend uses this to show or hide the comment input without making a
-   separate authorization check. Notice it calls `Gate::allows('comment', ...)`,
-   which invokes `IssuePolicy::comment()` — the same logic used server-side.
+- if controller eager-loaded comments, serialize them
+- otherwise omit them cleanly
 
-5. **Conditional inclusion** — `$this->whenLoaded('comments', ...)` only
-   includes comments if they were eager-loaded. The list endpoint does not
-   load comments (`withCount` only); the show endpoint does. One Resource class
-   handles both without branching.
+`mergeWhen($this->comments_count !== null, ...)` means:
+
+- include count metadata when available
+- do not force every response shape to always carry it
+
+This is how one resource class can serve multiple endpoints cleanly.
+
+### `can_comment` is server-derived UI permission
+
+The resource computes:
+
+```php
+'can_comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+```
+
+That is powerful because the UI does not invent permission logic; it consumes a
+server-certified answer.
+
+This is a very good full-stack pattern.
 
 ### Reading exercise for §8
 
-1. What does `$this->mergeWhen($this->comments_count !== null, ...)` do? Why
-   is checking `!== null` safer than a truthy check here?
-2. The `comments` block inside `whenLoaded` maps each comment to a custom
-   array. Why not use a `CommentResource` class? (There are valid arguments
-   both ways — what is the trade-off?)
-3. Open `IssueController::index()`. What relationships does it eager-load?
-   What does `withCount('comments')` add? Now open `show()`. What extra
-   relationship does it load that `index()` does not?
+1. Compare `IssueController@index()` and `show()`. Which fields in
+   `IssueResource` depend on eager loading differences?
+2. Explain why `status_obj` belongs in the resource rather than making the
+   frontend derive it itself.
+3. Find one field in `IssueResource` that is a pure model field, one that is a
+   transformed field, and one that is a computed field.
 
 ---
 
 ## §9 The AI Summary Pipeline
 
-This is the most architecturally interesting part of the project. It uses four
-patterns together: Manager, Strategy, Facade, and Value Object. Read this
-section carefully — it mirrors how Laravel itself builds its cache, queue, and
-mail systems.
+### NestJS translation first
 
-### The anatomy of the AI subsystem
+The AI subsystem is the most “architected” part of the backend. If you came from
+NestJS, think of it as a provider graph built around an abstraction:
 
-```
-app/
-├── Contracts/
-│   └── SummaryGeneratorInterface.php    ← the contract (interface)
-├── Facades/
-│   └── Summary.php                      ← the entry point for app code
-├── Services/
-│   └── Summary/
-│       ├── SummaryManager.php           ← driver resolution
-│       ├── SummaryResult.php            ← value object (DTO)
-│       └── Drivers/
-│           ├── LlmDriver.php            ← OpenAI-compatible HTTP call
-│           └── RulesDriver.php          ← deterministic fallback
-├── Jobs/
-│   └── GenerateSummaryJob.php           ← async execution
-└── Providers/
-    └── SummaryServiceProvider.php       ← registration
+```text
+Job -> facade-like entrypoint -> manager -> chosen strategy driver -> value object result
 ```
 
-### The interface — defining the seam
+Laravel expresses that using:
 
-```php
-// app/Contracts/SummaryGeneratorInterface.php
-interface SummaryGeneratorInterface
-{
-    /** @throws SummaryGenerationException */
-    public function generate(Issue $issue): SummaryResult;
-}
-```
+- interface
+- manager
+- facade
+- service provider
+- queued job
 
-This interface is the **seam** between the application and the summary
-implementation. Application code (the job, tests) depends on this interface,
-not on `LlmDriver` or `RulesDriver` directly. That is the **Dependency
-Inversion Principle**: depend on abstractions, not concretions.
+### The parts and their jobs
 
-The interface says: "any driver must accept an Issue and return a SummaryResult,
-or throw SummaryGenerationException if something goes wrong."
+- `SummaryGeneratorInterface` -> contract
+- `LlmDriver` -> primary external AI strategy
+- `RulesDriver` -> deterministic fallback strategy
+- `SummaryManager` -> chooses driver
+- `Summary` facade -> readable entry point
+- `SummaryResult` -> immutable result carrier
+- `GenerateSummaryJob` -> async execution and retry/fallback orchestration
+- `SummaryServiceProvider` -> container registration
+- `AppServiceProvider::bootAiSettings()` -> DB settings -> config bridge
 
-### The Manager — driver resolution
+### Why the interface matters
 
-Open `app/Services/Summary/SummaryManager.php`:
+The interface forces both drivers to return the same output shape and failure
+contract. That means the job is insulated from driver-specific details.
 
-```php
-class SummaryManager extends Manager
-{
-    public function getDefaultDriver(): string
-    {
-        $configured = (string) config('summary.default', 'rules');
+This is genuine Dependency Inversion, not ceremonial abstraction.
 
-        if ($configured === 'llm' && empty(config('summary.drivers.llm.api_key'))) {
-            return 'rules';  // silent auto-fallback when no key is configured
-        }
+### Why `SummaryManager` is such a Laravel-native design
 
-        return $configured;
-    }
+Extending `Illuminate\Support\Manager` is an advanced but elegant move. It is
+the same pattern Laravel itself uses for cache/mail/queue/filesystems.
 
-    public function createLlmDriver(): SummaryGeneratorInterface { ... }
-    public function createRulesDriver(): SummaryGeneratorInterface { ... }
-}
-```
+So this project is not just using a generic strategy pattern — it is expressing
+that strategy in a framework-native way.
 
-`Illuminate\Support\Manager` is a **Laravel-native base class** that implements
-the Manager pattern. Laravel itself uses it for `CacheManager`, `QueueManager`,
-`MailManager`, `FilesystemManager`. Extending it gives you:
-- `driver($name)` — resolves and caches a driver instance
-- Auto-discovery of `create{Name}Driver()` methods (Laravel calls
-  `createLlmDriver()` when you request the `llm` driver)
-- The `getDefaultDriver()` hook for the default
+### The DB-settings-to-config bridge is a strong design choice
 
-**The no-key auto-fallback** in `getDefaultDriver()` is a **custom addition** to
-the Laravel Manager pattern. It transparently downgrades to `rules` if the LLM
-driver is configured but no API key is present. The job never needs to check
-for missing keys — that concern is isolated here.
+`AppServiceProvider::bootAiSettings()` reads the current `AiSetting` row and
+pushes it into config.
 
-### The Facade — the public entry point
+That means the summary subsystem only needs to read config. It does **not** need
+to know about the DB model directly.
 
-```php
-// app/Facades/Summary.php
-class Summary extends Facade
-{
-    protected static function getFacadeAccessor(): string
-    {
-        return SummaryManager::class;
-    }
-}
-```
+This lowers coupling between:
 
-A **Laravel Facade** provides a static-style API into the service container.
-`Summary::generate($issue)` looks like a static call but actually:
-1. Finds `SummaryManager` in the container (registered by `SummaryServiceProvider`)
-2. Calls `->generate($issue)` on the manager instance
-3. The manager delegates to the resolved driver
+- runtime configuration persistence
+- summary execution
 
-**Why a Facade here?** The job uses `Summary::generate($issue)`. Without the
-Facade, it would need `app(SummaryManager::class)->generate($issue)` or
-constructor injection. The Facade is a readability choice — it is the most
-common approach in Laravel's own codebase.
+That is one of the best design moves in the project.
 
-**What `SummaryServiceProvider` does:**
+### `SummaryResult` is a real value object, not just an array
 
-```php
-$this->app->singleton(SummaryManager::class, function ($app): SummaryManager {
-    return new SummaryManager($app);
-});
-```
+Using `SummaryResult` means drivers return a named, immutable structure:
 
-This registers `SummaryManager` as a singleton in the container. "Singleton"
-means Laravel creates one instance and reuses it for the entire request. The
-Facade resolves it by class name.
+- summary
+- suggested next action
+- suggested next ticket
+- driver
 
-**AppServiceProvider bridges DB settings to config:**
+This is cleaner than ad hoc arrays because it gives the subsystem a stable
+internal contract.
 
-```php
-// AppServiceProvider::bootAiSettings()
-$settings = AiSetting::current();
-config([
-    'summary.default'           => $settings->effective_driver,
-    'summary.drivers.llm.api_key' => $settings->api_key,
-    // ...
-]);
-```
+### Job retry and fallback split responsibilities correctly
 
-This is a runtime config override: user-configurable AI settings are stored in
-the `ai_settings` table and pushed into `config()` at boot time. `SummaryManager`
-reads only from `config()`, keeping it ignorant of the database. The
-`AppServiceProvider` is the bridge — a **separation of concerns** between where
-settings are stored and where they are read.
+`GenerateSummaryJob` does not try to be a smart AI client itself. Instead it:
 
-### The Value Object — SummaryResult
+- marks processing
+- calls the summary facade
+- retries on transient failure
+- falls back to rules on final attempt or sync queue
+- persists final result
+- fires `SummaryCompleted`
 
-```php
-final readonly class SummaryResult
-{
-    public function __construct(
-        public string $summary,
-        public string $suggestedNextAction,
-        public string $driver,  // 'llm' or 'rules'
-    ) {}
-}
-```
-
-`readonly` (PHP 8.2) means all properties are set once in the constructor and
-cannot be mutated. This is a **Value Object** (§11): a data carrier with no
-identity, no methods, and immutable state. Drivers return `SummaryResult`; the
-job reads from it. No mutable state leaks between subsystems.
-
-### The Job — putting it all together
-
-Open `app/Jobs/GenerateSummaryJob.php` and read the `handle()` method:
-
-```php
-public function handle(): void
-{
-    $this->issue->refresh();              // 1. re-read from DB (stale guard)
-    $this->issue->load('category');       // 2. reload lost relation
-
-    $this->issue->summary_status = SummaryStatus::Processing;
-    $this->issue->save();                 // 3. mark as in-progress
-
-    $result = $this->generateWithFallback(); // 4. attempt driver(s)
-
-    $this->issue->summary = $result->summary;
-    $this->issue->suggested_next_action = $result->suggestedNextAction;
-    $this->issue->summary_status = SummaryStatus::Ready;
-    $this->issue->save();                 // 5. persist result
-
-    event(new SummaryCompleted($this->issue)); // 6. fire event for SSE
-}
-```
-
-**Notable patterns in the job:**
-- `refresh()` is called first because the issue may have changed between when
-  the job was dispatched and when it runs on the queue worker.
-- The `load('category')` call is needed because Eloquent relations are
-  *not* serialized when the job is pushed to the queue — only the Issue's ID
-  is stored; the model is re-hydrated from the DB.
-- State transitions (`Pending → Processing → Ready/Failed`) are made explicit
-  by setting `summary_status`. This is the state machine discussed in §7.
-
-The `generateWithFallback()` private method handles retries vs. fallback:
-
-```php
-private function generateWithFallback(): SummaryResult
-{
-    try {
-        return Summary::generate($this->issue);
-    } catch (SummaryGenerationException $e) {
-        $isSyncQueue = config('queue.default') === 'sync';
-        if (! $isSyncQueue && $this->attempts() < $this->tries) {
-            throw $e;  // still have retries — rethrow for Laravel to re-queue
-        }
-        // Final attempt or sync queue — use rules driver
-        return Summary::driver('rules')->generate($this->issue);
-    }
-}
-```
-
-On a real async queue, rethrowing `SummaryGenerationException` causes Laravel
-to re-queue the job with backoff. On the sync queue (used in tests), there are
-no re-queues, so it falls back immediately. This dual behavior is the reason for
-the `config('queue.default') === 'sync'` check.
+That is a very clean async orchestration boundary.
 
 ### Reading exercise for §9
 
-1. Read `app/Providers/SummaryServiceProvider.php`. The singleton binding uses
-   `SummaryManager::class` as the key. Read `app/Facades/Summary.php`. Confirm
-   that `getFacadeAccessor()` returns the same string. This is how the Facade
-   finds the right singleton.
-2. The `GenerateSummaryJob` fires `SummaryCompleted` at the end. Where is
-   this event handled? Search the codebase for `SummaryCompleted` — find the
-   listener and trace what it does (SSE push).
-3. What prevents the rules driver from ever throwing? Read
-   `app/Services/Summary/Drivers/RulesDriver.php`. What is its fallback if
-   no category or description matches a known pattern?
+1. Trace a successful summary path from `IssueService::create()` to
+   `GenerateSummaryJob::handle()` to `Summary::generate()`.
+2. Explain why the “no API key” fallback belongs in `SummaryManager`, not in the
+   job.
+3. Compare `LlmDriver` and `RulesDriver`. Which parts of the interface contract
+   force them to remain interchangeable?
 
 ---
 
 ## §10 Routes and Middleware
 
-### routes/api.php — five lines that register twelve endpoints
+### Routes are the public contract map
 
-Open `routes/api.php`:
+`routes/api.php` now tells a slightly richer story than earlier sections:
 
-```php
-Route::middleware('auth')->apiResource('issues', IssueController::class);
-```
+- issues CRUD
+- comments on issues
+- categories CRUD subset
+- statuses CRUD subset + migrate-and-delete workflow
+- shares nested under issues, shallow for individual share ops
+- AI endpoints
+- settings endpoints
+- SSE stream endpoint
 
-`apiResource` is **Laravel-native** and registers:
-- `GET  /api/issues`          → `index`
-- `POST /api/issues`          → `store`
-- `GET  /api/issues/{issue}`  → `show`
-- `PUT|PATCH /api/issues/{issue}` → `update`
-- `DELETE /api/issues/{issue}` → `destroy`
+This is a good example of a route file acting like an application map.
 
-No `create` or `edit` routes (those are for HTML forms) — `apiResource` skips
-them automatically for API use.
+### `apiResource()` is compact, but you must think in expansions
 
-The `{issue}` segment is a **route model binding** — Laravel-native. When a
-request comes in for `/api/issues/42`, Laravel automatically looks up `Issue`
-with `id = 42` and injects the instance into the controller method. If not
-found, it returns `404` before the controller runs. This eliminates:
+Laravel route files can look tiny because helpers like `apiResource()` expand to
+multiple endpoints.
 
-```php
-// You never write this anymore
-$issue = Issue::findOrFail($request->issue_id);
-```
+As a reader, always mentally expand them.
 
-### Shallow nesting for shares
+### Configurable statuses changed the route architecture
+
+This branch added:
 
 ```php
-Route::middleware('auth')->apiResource('issues.shares', ShareController::class)->shallow();
+Route::middleware('auth')->apiResource('statuses', StatusController::class)
+    ->only(['index', 'store', 'update', 'destroy']);
+Route::middleware('auth')->post('statuses/{status}/migrate-and-delete', [StatusController::class, 'migrateAndDelete']);
 ```
 
-`shallow()` is a Laravel-native shorthand. Without it, you would need
-`/api/issues/{issue}/shares/{share}` for every share operation. With `shallow()`,
-nested routes for individual resources flatten to `/api/shares/{share}` — the
-issue context is only needed for creation (where you need the parent issue ID).
+That shows a nice pattern:
 
-### The `triage-suggest` ordering problem
+- use resource routes for standard CRUD
+- add one explicit custom route for a workflow that is not plain CRUD
+
+`migrate-and-delete` is a business workflow route, not a resource-default action.
+
+### Invokable controllers and SSE
+
+The SSE route uses:
 
 ```php
-Route::post('issues/triage-suggest', [IssueController::class, 'triageSuggest']);
-Route::middleware('auth')->apiResource('issues', IssueController::class);
+Route::middleware('auth')->get('issues/{issue}/stream', IssueSseController::class);
 ```
 
-This ordering is deliberate and documented with a comment:
+That means `IssueSseController` is an **invokable controller** with `__invoke()`.
 
-```php
-// triage-suggest must be declared BEFORE the apiResource wildcard to avoid
-// the {issue} segment swallowing "triage-suggest" as an issue ID.
-```
+This is a nice Laravel convention for single-action endpoints.
 
-If `apiResource` were declared first, Laravel's router would match
-`/api/issues/triage-suggest` as `show(issue=triage-suggest)` and fail with a
-model-not-found error. Route declaration order matters; this is a classic
-Laravel routing gotcha.
+### Middleware role in this app
+
+Most routes use `auth`, and the app also configures stateful API behavior in
+`bootstrap/app.php`.
+
+So route files declare access at the coarse level, while policies declare
+object-specific permissions at the fine level.
 
 ### Reading exercise for §10
 
-1. Run `./vendor/bin/sail artisan route:list --path=api` (or check the README
-   for the equivalent make target). Count the routes. Match each route to a
-   controller method.
-2. What does `->only(['index', 'store', 'destroy'])` do on the categories
-   resource route? Why would categories not need `show` or `update`?
-3. The SSE endpoint is `Route::get('issues/{issue}/stream', IssueSseController::class)`.
-   Note that `IssueSseController` is referenced directly as the second argument,
-   not as `[IssueSseController::class, 'method']`. Why? (Hint: look at what
-   an invokable controller is in Laravel.)
+1. Run route:list and group routes into: resource CRUD, custom workflow, auth,
+   and streaming.
+2. Explain why `migrate-and-delete` should not be forced into a standard REST
+   destroy route.
+3. Find one route that relies on route model binding for `IssueStatus` and one
+   for `Issue`.
 
 ---
 
 ## §11 Design Patterns Audit
 
-### Patterns used, where, and why
+### The major patterns actually used in this repo
 
-| Pattern | File(s) | What it achieves |
-|---------|---------|-----------------|
-| **MVC** | Controllers + Models + Inertia views | Baseline organization: routes dispatch to thin controllers, models hold data, Inertia renders views |
-| **Form Request** | `app/Http/Requests/*` | Moves all validation out of controllers; makes rules explicit and discoverable |
-| **Policy** | `app/Policies/*` | Centralizes all authorization; never duplicate auth logic across endpoints |
-| **Service Layer** | `app/Services/IssueService.php` | Separates complex workflows from controllers and models |
-| **Active Record** | `app/Models/*` | Eloquent: each model = table, each instance = row; good fit for a CRUD-heavy app at this scale |
-| **Observer-like Model Events** | `Issue::booted()`, `Category::booted()` | Automatic side effects on save: recompute `needs_attention`, auto-generate slugs |
-| **Query Object via Scopes** | `Issue::scopeFilter*`, `scopeAccessibleBy` | Composable, reusable query building on the model; keeps SQL out of controllers |
-| **Manager** | `SummaryManager extends Manager` | Laravel-idiomatic driver resolution; mirrors `CacheManager`, `QueueManager` |
-| **Strategy** | `LlmDriver`, `RulesDriver` implement `SummaryGeneratorInterface` | Pluggable algorithm behind a stable contract; add a new AI provider without changing the job |
-| **Facade** | `App\Facades\Summary` | Static-style entry point into the container-managed manager; standard Laravel idiom |
-| **Value Object / DTO** | `SummaryResult` | Immutable data carrier returned by drivers; no shared mutable state between subsystems |
-| **Resource Transformer** | `IssueResource` | Stable API contract; separates JSON shape from internal model shape |
-| **Optimistic UI** | `useKanbanBoard.ts` | Client-side: instant drag-drop response with server rollback on failure |
-| **Composable State** | Frontend composables | Vue equivalent of a service layer: isolates async logic and state from UI components |
+| Pattern | Where | Why it matters |
+|---|---|---|
+| MVC-ish Laravel layering | routes/controllers/models/views | base application structure |
+| Form Request | `app/Http/Requests/*` | centralized validation |
+| Policy | `app/Policies/*` | centralized authorization |
+| Service Layer | `IssueService` | workflow orchestration |
+| Active Record | Eloquent models | Laravel-native data access style |
+| Model Event / Observer-like hook | `booted()` methods | automatic invariant maintenance |
+| Query Scopes | `Issue` model | reusable query language |
+| Manager | `SummaryManager` | framework-native driver resolution |
+| Strategy | `LlmDriver`, `RulesDriver` | swappable summary generation |
+| Facade | `Summary` | readable app entrypoint |
+| Value Object | `SummaryResult` | stable immutable driver output |
+| Resource Transformer | `IssueResource` | stable API contract |
+| Optimistic Locking | `IssueService::update()` | safe concurrent mutation |
+| Database-backed workflow metadata | `IssueStatus` | runtime-configurable status system |
+| Composable shared state | Vue composables | lightweight frontend architecture |
+| Optimistic UI with rollback | `useKanbanBoard` | fast UX with consistency recovery |
 
-### The most important patterns to internalize
+### Which patterns are most worth internalizing
 
-**Form Request + Policy + Thin Controller (the Laravel triad):**
-These three patterns together define "clean Laravel." If you understand why they
-exist and can trace the request pipeline through them, you understand the
-dominant architectural style of modern Laravel applications.
+If you only remember four, remember these:
 
-**Manager + Strategy + Facade (the AI triad):**
-These three patterns together show how to build an extensible subsystem that is
-testable, configuration-driven, and transparent to callers. This is not
-theoretical — it is the same pattern Laravel uses internally for every pluggable
-system.
+1. **Form Request + Policy + thin controller**
+2. **Model scopes + Eloquent relationships**
+3. **Service layer for non-trivial workflow**
+4. **Manager + Strategy + Facade for pluggable subsystems**
+
+Those four explain most of the codebase.
 
 ---
 
 ## §12 Best Practices Audit
 
-### Practices used — grounded in this repo's actual code
+### Practices this repo uses well
 
-| Practice | Where | Laravel-native? |
-|----------|-------|----------------|
-| Constructor injection via type hints | All controllers | Yes — Laravel DI container |
-| PHP 8 constructor property promotion (`private readonly`) | `IssueController`, others | No — PHP 8+ language feature, not Laravel-specific |
-| Enum casting in models | `Issue::casts()` | Yes — Laravel 9+ |
-| `Rule::enum()` in Form Requests | `StoreIssueRequest`, `UpdateIssueRequest` | Yes — Laravel 9+ |
-| Route model binding | All resource controller methods | Yes — auto-resolved by Laravel |
-| Eager loading to prevent N+1 | `IssueController::index()` uses `->with([...])` | Best practice using Laravel tools |
-| `withCount()` for counts without loading collections | `index()` adds `withCount('comments')` | Yes — Eloquent |
-| Soft deletes | `Issue` uses `SoftDeletes` trait | Yes — Laravel trait |
-| `SoftDeletes` scoping | Deleted issues excluded from all queries automatically | Yes — built into the trait |
-| Factory-based test data | `tests/` use `IssueFactory`, `UserFactory` | Yes — Laravel factories |
-| `RefreshDatabase` in tests | All feature/integration tests | Yes — rolls back DB between tests |
-| Queue::fake() in tests | Summary job dispatch tests | Yes — Laravel test helper |
-| Http::fake() in tests | LLM driver tests | Yes — Laravel test helper |
-| Pagination via `paginate()` | `IssueController::index()` | Yes — Eloquent |
-| `appends()` to preserve query params in pagination | `index()` | Yes — Laravel |
-| `response()->noContent()` for 204 responses | `destroy()` | Yes — Laravel response helper |
-| Typed exceptions | `SummaryGenerationException` | No — pure PHP pattern |
-| `@throws` PHPDoc on interfaces | `SummaryGeneratorInterface` | No — documentation convention |
+| Practice | Where | Why it is good |
+|---|---|---|
+| Constructor injection | controllers/providers | explicit dependencies |
+| Form Requests | issue/comment/share/status requests | validation separation |
+| Policies | issue/comment | centralized auth |
+| Enum casting | `Issue`, `IssueShare` | type-safe domain values |
+| Eager loading + counts | `IssueController@index/show` | avoids N+1 and underfetching |
+| Resource shaping | `IssueResource` | stable contract |
+| Queue offloading | `GenerateSummaryJob` | faster requests, retries |
+| Explicit fallback strategy | summary subsystem | resilient AI path |
+| Soft deletes | `Issue` | safe deletion semantics |
+| Focused service usage | `IssueService` only where needed | avoids ceremony |
+| DB-backed configurable workflow state | `IssueStatus` | flexible product evolution |
+| Shared composables instead of overbuilt store | `resources/js/composables/*` | right-sized frontend state |
 
-### Practices notable for their absence (intentional)
+### Practices intentionally not used
 
-| Not used | Why not |
-|----------|---------|
-| Repository pattern | Eloquent models with scopes serve the same query composition purpose; a Repository layer would be ceremony without value at this scale |
-| Dedicated DTO for every model | Only `SummaryResult` is a DTO because it crosses a subsystem boundary; internal model data moves as Eloquent instances |
-| Vuex/Pinia state management | `useKanbanBoard.ts` uses module-scoped refs (singleton-like pattern); a full store is overkill for a single dashboard surface |
-| Custom exception handler | Laravel's default exception handler correctly serializes API exceptions to JSON without customization |
-| API versioning | Single audience, single API contract; versioning would be over-engineering for this scope |
+| Not used | Why that is reasonable here |
+|---|---|
+| Repository layer everywhere | Eloquent + scopes already express intent clearly |
+| DTO class for every API output | `JsonResource` already covers response shaping |
+| Role-based auth system | object-specific sharing model fits policies better |
+| Pinia/Vuex global store | board state is manageable with composables |
+| WebSocket stack | SSE is enough for one-way summary completion |
+
+### One nuanced best-practice note
+
+This repo generally follows Laravel best practices, but it also shows a mature
+truth: sometimes good architecture includes tactical implementation details, like
+the manual `updated_at` bump for deterministic optimistic locking.
+
+So “best practice” is not about purity. It is about keeping compromises local,
+documented, and justified.
 
 ---
 
 ## §13 What's Framework vs. Custom
 
-### Full classification table for this project
+### A practical classification table
 
-| Component | File(s) | Classification |
-|-----------|---------|----------------|
-| HTTP Kernel | `bootstrap/app.php`, `public/index.php` | **Framework-native** — not modified |
-| Session, auth middleware | `config/session.php`, `routes/web.php` | **Framework-native** — configured only |
-| Eloquent `Model`, `HasFactory`, `SoftDeletes` | `app/Models/*.php` | **Framework-native** — traits/base class |
-| `FormRequest`, `Rule::enum()`, `exists:` rule | `app/Http/Requests/*.php` | **Framework-native** — extended, not modified |
-| `Policy`, `Gate::allows()` | `app/Policies/*.php` | **Framework-native** mechanism, **custom** logic |
-| `Route::apiResource()`, route model binding | `routes/api.php` | **Framework-native** |
-| `JsonResource`, `whenLoaded()`, `mergeWhen()` | `app/Http/Resources/*` | **Framework-native** base, **custom** field mapping |
-| `Manager` base class | `app/Services/Summary/SummaryManager.php` | **Framework-native** base, **custom** driver logic |
-| `Facade` base class | `app/Facades/Summary.php` | **Framework-native** base, **custom** accessor |
-| `ServiceProvider`, `singleton()` | `app/Providers/*.php` | **Framework-native** mechanism, **custom** bindings |
-| `ShouldQueue`, `Queueable`, `$tries`, `$backoff` | `app/Jobs/GenerateSummaryJob.php` | **Framework-native** interface + trait, **custom** handle() |
-| `dispatch()`, `Queue::fake()` | throughout | **Framework-native** |
-| `SoftDeletes`, `RefreshDatabase` | Models, tests | **Framework-native** |
-| Breeze auth routes/views | `routes/auth.php`, `resources/js/Pages/Auth/*` | **Package-provided** (Laravel Breeze) |
-| Horizon UI, `HorizonServiceProvider` | `/horizon`, `app/Providers/Horizon*` | **Package-provided** (Laravel Horizon) |
-| shadcn-vue components | `resources/js/components/ui/*` | **Package-provided** (shadcn-vue CLI) |
-| Inertia middleware, `usePage()` | `app/Http/Middleware/HandleInertiaRequests.php` | **Package-provided** (Inertia) |
-| Tailwind v4 tokens | `resources/css/app.css` | **Package-provided** (Tailwind), **custom** token values |
-| `IssueService` | `app/Services/IssueService.php` | **Custom app architecture** |
-| `SummaryGeneratorInterface` | `app/Contracts/*.php` | **Custom app architecture** |
-| `SummaryResult` | `app/Services/Summary/SummaryResult.php` | **Custom app architecture** |
-| `LlmDriver`, `RulesDriver` | `app/Services/Summary/Drivers/*` | **Custom app architecture** |
-| Enum behavior methods (`needsAttention`, `canEdit`) | `app/Enums/*` | **Custom app architecture** |
-| Model scopes (`scopeAccessibleBy`, etc.) | `app/Models/Issue.php` | **Custom app architecture** |
-| `computeNeedsAttention()` | `app/Models/Issue.php` | **Custom app architecture** |
-| Optimistic locking in `IssueService::update()` | `app/Services/IssueService.php` | **Custom app architecture** |
-| `AppServiceProvider::bootAiSettings()` | `app/Providers/AppServiceProvider.php` | **Custom app architecture** |
-| Frontend composables | `resources/js/composables/*` | **Custom app architecture** |
+| Component | Classification | Notes |
+|---|---|---|
+| Routing, middleware, model binding | Framework-native | core Laravel request plumbing |
+| Eloquent model base, relationships, casts, scopes convention | Framework-native | used idiomatically |
+| Form Request mechanism | Framework-native | custom rule content lives inside |
+| Policy mechanism / Gate | Framework-native | authorization logic is custom |
+| Service container / providers / singleton binding | Framework-native | binding decisions are custom |
+| Queue/job system | Framework-native | job workflow is custom |
+| Inertia bridge | Package-provided | app-specific page/component design on top |
+| Breeze auth scaffold | Package-provided | customized branding/UI on top |
+| Horizon | Package-provided | queue observability |
+| shadcn-vue / reka-ui | Package-provided | UI primitives only |
+| `IssueService` | Custom architecture | workflow logic |
+| `SummaryGeneratorInterface` / drivers / manager wiring | Custom architecture | pluggable AI subsystem |
+| `IssueStatus` runtime status system | Custom architecture | configurable workflow states |
+| `IssueResource` field mapping | Custom architecture | frontend contract |
+| Vue composables | Custom architecture | frontend state/workflow organization |
+| `vault/` docs and ADR discipline | Custom architecture/process | not Laravel, but very valuable |
+
+### The main lesson of this classification
+
+Laravel gives the building blocks. The app decides:
+
+- where to split responsibilities
+- which concepts are static enums vs runtime tables
+- which workflows deserve services
+- how to expose a stable frontend contract
+
+That is the line between framework skill and architecture skill.
 
 ---
 
-## Next Steps for Iterative Study
+## §14 Frontend Architecture
 
-### What is fully drafted in this document
+### Why the frontend belongs in this architecture course
+
+This project is not “backend Laravel plus random JS.” The frontend is part of
+the architectural design.
+
+It uses:
+
+- Inertia for page delivery
+- Vue 3 for UI
+- TypeScript for contracts
+- composables for reusable state/workflow logic
+
+### The important frontend folders
+
+- `resources/js/Pages` -> page-level entrypoints
+- `resources/js/Layouts` -> application shells
+- `resources/js/components` and `resources/js/Components` -> reusable UI/domain components
+- `resources/js/composables` -> shared state and async logic
+- `resources/js/types` -> frontend contract types
+
+### Composables are the frontend analogue of services
+
+This repo uses composables as the main frontend architecture tool.
+
+Examples:
+
+- `useKanbanBoard` -> board data loading, pagination, drag/drop updates
+- `useIssueDetail` -> detail fetch/patch/delete/conflict handling
+- `useSummaryStream` -> SSE + polling fallback
+- `useStatuses` -> singleton-like status cache
+- `useIssueFilters` -> shared board filter state
+
+These are not just helper functions. They are where frontend workflow logic
+lives.
+
+### Shared module-scoped refs are a deliberate store alternative
+
+Several composables use module-scoped refs so every consumer shares one state
+instance. That gives many benefits of a global store without introducing Pinia.
+
+This is a good example of choosing the smallest architecture that solves the
+problem.
+
+### Optimistic UI is one of the strongest frontend patterns here
+
+`useKanbanBoard` performs drag/drop updates optimistically and rolls back on
+failure. `useIssueDetail` also detects 409 conflicts and refreshes the issue.
+
+That means the frontend is not just a passive renderer; it actively participates
+in consistency management.
+
+### SSE fallback design is excellent teaching material
+
+`useSummaryStream` starts with EventSource, counts repeated failures, and falls
+back to polling when needed.
+
+That is robust frontend architecture, not toy demo code.
+
+### Full-stack contract awareness
+
+The frontend depends heavily on the shape defined by `IssueResource`, including:
+
+- `status` slug
+- `status_id`
+- `status_obj`
+- `can_comment`
+- comments array when loaded
+
+That means backend resource design and frontend composables must evolve together.
+
+### Reading exercise for §14
+
+1. Open `useStatuses` and explain why it behaves like a singleton cache.
+2. Open `useIssueDetail` and find the exact place where optimistic locking is
+   surfaced to the UI.
+3. Open `useSummaryStream` and describe when it switches from SSE to polling.
+4. Compare `useKanbanBoard` to a Pinia store mentally. What benefits does this
+   smaller pattern give for this project size?
+
+---
+
+## Course Completion Notes
+
+### What is now fully drafted
 
 - §1 Project Structure Tour
 - §2 The Request Lifecycle
@@ -2791,25 +2835,27 @@ system.
 - §11 Design Patterns Audit
 - §12 Best Practices Audit
 - §13 What's Framework vs. Custom
+- §14 Frontend Architecture
 
-### Recommended next section to iterate
+### How to use the completed course
 
-**§14 Frontend Architecture** is the natural next section.
+Recommended study order now:
 
-It would cover:
-- How Inertia bridges Laravel routes and Vue components (no separate API)
-- The `resources/js/` directory structure (Pages, Components, composables, Types)
-- How TypeScript contracts mirror the backend's `IssueResource` shape
-- Composables as the frontend service layer (`useKanbanBoard`, `useIssueDetail`,
-  `useSummaryStream`)
-- The singleton-like board state pattern and why Pinia was not needed
-- Optimistic UI in `useKanbanBoard.ts` with rollback on 409
-- URL-aware slide-over in `useIssueDetail.ts` (back button, deep linking)
+1. §1–§2 to get the skeleton
+2. §3–§6 to learn the backend layering
+3. §7–§10 to understand the most important cross-cutting architecture seams
+4. §11–§13 to consolidate pattern recognition
+5. §14 to connect the backend architecture to the Vue/Inertia frontend
 
-This section requires reading the Vue/TypeScript code alongside the PHP, which
-is why it is deferred for a separate iteration session.
+### Final framing
+
+If you come from NestJS, the most important adaptation is this:
+
+> Laravel does not usually ask you to think in modules first. It asks you to think in lifecycle boundaries and framework conventions first, then apply architecture on top.
+
+That is exactly what this project demonstrates.
 
 ---
 
-*Source of truth: if this document and the code disagree, trust the code. File
-any discovered contradictions in a PR comment or update this section.*
+*Source of truth: if this document and the current branch's code disagree,
+trust the code and update the course.*
