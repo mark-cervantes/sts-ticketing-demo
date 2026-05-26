@@ -125,8 +125,11 @@ const activePreset = computed(() =>
   availablePresets.value.find((p) => p.key === activePresetKey.value) ?? null,
 )
 
-const presetIsOpenRouter = computed(
-  () => activePreset.value?.provider === 'openrouter',
+/** Presets that support browsable model lists via the /api/settings/ai/models endpoint */
+const BROWSABLE_PRESET_KEYS = new Set(['openrouter', 'ollama-cloud'])
+
+const presetHasModelBrowser = computed(
+  () => activePresetKey.value !== null && BROWSABLE_PRESET_KEYS.has(activePresetKey.value),
 )
 
 const lastUpdatedText = computed(() => {
@@ -530,7 +533,7 @@ async function testConnection(): Promise<void> {
 
                     <!-- ModelCombobox for OpenRouter presets -->
                     <ModelCombobox
-                      v-if="presetIsOpenRouter"
+                      v-if="presetHasModelBrowser"
                       v-model="presetModelOverride"
                       :models="openRouterModels"
                       :loading="modelsLoading"
