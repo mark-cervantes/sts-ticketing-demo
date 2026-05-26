@@ -1,6 +1,4 @@
 <script lang="ts" setup>
-import type { ToasterProps } from 'vue-sonner'
-
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -9,23 +7,19 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
-import { computed } from 'vue'
 import { Toaster as Sonner } from 'vue-sonner'
-import { cn } from '@/lib/utils'
-
-const props = defineProps<ToasterProps>()
-
-// Build delegated reactively — the old destructure was a one-shot snapshot
-const delegated = computed(() => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { class: _c, toastOptions: _t, ...rest } = props
-  return rest
-})
 </script>
 
 <template>
   <Sonner
-    :class="cn('toaster group', props.class)"
+    class="toaster group"
+    position="top-right"
+    :visible-toasts="4"
+    :duration="5000"
+    :offset="16"
+    :gap="8"
+    rich-colors
+    close-button
     :style="{
       '--normal-bg': 'var(--popover)',
       '--normal-text': 'var(--popover-foreground)',
@@ -36,9 +30,7 @@ const delegated = computed(() => {
       classes: {
         toast: 'rounded-2xl',
       },
-      ...props.toastOptions,
     }"
-    v-bind="delegated"
   >
     <template #success-icon>
       <CircleCheckIcon class="size-4" />

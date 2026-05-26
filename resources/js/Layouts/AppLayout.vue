@@ -82,14 +82,6 @@ function handleIssueCreated(): void {
       </main>
     </div>
 
-    <Toaster
-      position="top-right"
-      :visible-toasts="4"
-      :duration="5000"
-      rich-colors
-      close-button
-      :offset="16"
-      :gap="8"
-    />
+    <Toaster />
   </div>
 </template>
