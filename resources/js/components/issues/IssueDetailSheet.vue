@@ -56,7 +56,7 @@ import {
   RefreshCwIcon,
   TicketPlusIcon,
 } from '@lucide/vue'
-import { useCreateIssue } from '@/composables/useCreateIssue'
+import CreateIssueDialog from '@/components/issues/CreateIssueDialog.vue'
 import { apiPost } from '@/composables/useApiFetch'
 import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
@@ -317,31 +317,27 @@ async function handleRegenerate(): Promise<void> {
 
 // --- Suggested follow-up ticket creation ---
 
-const { form: followUpForm, isSubmitting: followUpSubmitting, submit: submitFollowUp, resetForm: resetFollowUpForm } = useCreateIssue()
+const followUpDialogOpen = ref(false)
+const followUpPrefill = ref<{ title?: string; description?: string; priority?: IssuePriority; category_id?: number | null }>({})
 
-async function handleCreateFollowUp(): Promise<void> {
-  if (!issue.value || followUpSubmitting.value) return
-
+function handleCreateFollowUp(): void {
+  if (!issue.value) return
   const suggestedTitle = issue.value.suggested_next_ticket
   if (!suggestedTitle) return
 
-  // Pre-fill form from parent issue context
-  followUpForm.value.title = suggestedTitle
-  followUpForm.value.description = `Follow-up from issue #${issue.value.id}: ${issue.value.title}`
-  followUpForm.value.priority = issue.value.priority
-  if (issue.value.category_id) {
-    followUpForm.value.category_id = issue.value.category_id
+  followUpPrefill.value = {
+    title: suggestedTitle,
+    description: `Follow-up from issue #${issue.value.id}: ${issue.value.title}`,
+    priority: issue.value.priority,
+    category_id: issue.value.category_id ?? null,
   }
+  followUpDialogOpen.value = true
+}
 
-  const created = await submitFollowUp()
-
-  if (created) {
-    toast.success('Follow-up ticket created')
-    window.dispatchEvent(new Event('issue:created'))
-    resetFollowUpForm()
-  } else {
-    toast.error('Failed to create follow-up ticket')
-  }
+function handleFollowUpCreated(): void {
+  followUpDialogOpen.value = false
+  window.dispatchEvent(new Event('issue:created'))
+  toast.success('Follow-up ticket created')
 }
 </script>
 
@@ -639,14 +635,12 @@ async function handleCreateFollowUp(): Promise<void> {
                 <button
                   v-if="issue.suggested_next_ticket"
                   type="button"
-                  :disabled="followUpSubmitting"
-                  class="mt-2 flex w-full gap-3 rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-                  :title="followUpSubmitting ? 'Creating…' : 'Click to create this follow-up ticket'"
+                  class="mt-2 flex w-full gap-3 rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="Click to create this follow-up ticket"
                   @click="handleCreateFollowUp"
                 >
                   <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Loader2Icon v-if="followUpSubmitting" class="size-4 animate-spin text-muted-foreground" />
-                    <TicketPlusIcon v-else class="size-4 text-muted-foreground" />
+                    <TicketPlusIcon class="size-4 text-muted-foreground" />
                   </div>
                   <div class="min-w-0 flex-1">
                     <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -744,6 +738,12 @@ async function handleCreateFollowUp(): Promise<void> {
         </AlertDialogContent>
       </AlertDialog>
     </SheetContent>
+
+    <CreateIssueDialog
+      v-model:open="followUpDialogOpen"
+      :prefill="followUpPrefill"
+      @created="handleFollowUpCreated"
+    />
   </Sheet>
 </template>
 
