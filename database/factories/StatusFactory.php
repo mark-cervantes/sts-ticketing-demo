@@ -22,7 +22,7 @@ class StatusFactory extends Factory
     {
         return [
             'name' => fake()->unique()->words(2, true),
-            'color' => '#'.fake()->hexColor(),
+            'color' => fake()->safeHexColor(),
             'sort_order' => fake()->numberBetween(0, 100),
             'is_default' => false,
         ];
