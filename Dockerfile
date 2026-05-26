@@ -73,12 +73,15 @@ RUN docker-php-ext-configure gd \
         zip \
         opcache
 
-# ext-redis via PECL (required for REDIS_CLIENT=phpredis)
-# Pin version + use GitHub tarball as PECL CDN fallback
-RUN pecl install redis-6.3.0 \
-    || (curl -fsSL https://github.com/phpredis/phpredis/archive/refs/tags/6.3.0.tar.gz -o /tmp/redis.tgz \
-        && pecl install /tmp/redis.tgz && rm /tmp/redis.tgz) \
-    && docker-php-ext-enable redis
+# ext-redis (required for REDIS_CLIENT=phpredis)
+# Build from source — PECL CDN unreliable as of 2026-05
+RUN mkdir -p /tmp/redis \
+    && curl -fsSL https://github.com/phpredis/phpredis/archive/refs/tags/6.3.0.tar.gz \
+       | tar xz -C /tmp/redis --strip-components=1 \
+    && cd /tmp/redis \
+    && phpize && ./configure && make -j"$(nproc)" && make install \
+    && docker-php-ext-enable redis \
+    && rm -rf /tmp/redis
 
 # Clean build deps
 RUN apk del .build-deps \
