@@ -12,6 +12,7 @@ final readonly class SummaryResult
     public function __construct(
         public string $summary,
         public string $suggestedNextAction,
+        public string $suggestedNextTicket,
         public string $driver,
     ) {}
 }

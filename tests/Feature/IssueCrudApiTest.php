@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Enums\Visibility;
 use App\Jobs\GenerateSummaryJob;
 use App\Models\Category;
@@ -764,8 +763,10 @@ class IssueCrudApiTest extends TestCase
         $user = User::factory()->create();
         $issue = Issue::factory()->for($user)->create();
 
+        $inProgressId = \App\Models\IssueStatus::where('slug', 'in_progress')->value('id');
+
         $this->actingAs($user)->patchJson("/api/issues/{$issue->id}", [
-            'status' => 'in_progress',
+            'status_id' => $inProgressId,
             'updated_at' => $issue->updated_at->toIso8601String(),
         ])->assertStatus(200);
 

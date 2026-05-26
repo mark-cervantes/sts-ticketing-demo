@@ -3,7 +3,15 @@
  * Single source of truth for all issue-related frontend types.
  */
 
-export type IssueStatus = 'open' | 'in_progress' | 'resolved'
+/** DB-backed status object from GET /api/statuses and IssueResource status_obj. */
+export interface IssueStatus {
+  id: number
+  name: string
+  slug: string
+  color: string
+  sort_order: number
+  is_default: boolean
+}
 
 export type IssuePriority = 'low' | 'medium' | 'high' | 'critical'
 
@@ -71,11 +79,17 @@ export interface Issue {
   title: string
   description: string
   priority: IssuePriority
-  status: IssueStatus
+  /** Status slug string — kept for backward compat (used in drag-drop data attrs etc.) */
+  status: string
+  /** Status foreign key ID */
+  status_id: number
+  /** Full status object from status_obj in IssueResource */
+  status_obj: IssueStatus
   visibility: IssueVisibility
   summary_status: SummaryStatus
   summary: string | null
   suggested_next_action: string | null
+  suggested_next_ticket: string | null
   needs_attention: boolean
   deadline_at: string | null
   user_id: number
@@ -91,7 +105,8 @@ export interface Issue {
 
 /** Filter state for the Kanban board sidebar. */
 export interface IssueFilters {
-  statuses: IssueStatus[]
+  /** Selected status IDs (integers). Empty means "all". */
+  statuses: number[]
   priorities: IssuePriority[]
   category: string | null // slug or null
 }
@@ -126,21 +141,16 @@ export interface Category {
   slug: string
 }
 
-/** Column descriptor for Kanban rendering. */
+/** Column descriptor for Kanban rendering — status is now a slug string (dynamic). */
 export interface KanbanColumnDef {
-  status: IssueStatus
+  status: string
+  statusId: number
   label: string
+  color: string
   issues: Issue[]
   loading: boolean
   hasMore: boolean
   currentPage: number
-}
-
-/** Status metadata for display. */
-export const STATUS_CONFIG: Record<IssueStatus, { label: string; order: number }> = {
-  open: { label: 'Open', order: 0 },
-  in_progress: { label: 'In Progress', order: 1 },
-  resolved: { label: 'Resolved', order: 2 },
 }
 
 /** Priority metadata for display & badge styling. */

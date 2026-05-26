@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
         DB::transaction(function (): void {
             $this->call([
                 CategorySeeder::class,
+                StatusSeeder::class,
                 UserSeeder::class,
                 IssueSeeder::class,
                 CommentSeeder::class,

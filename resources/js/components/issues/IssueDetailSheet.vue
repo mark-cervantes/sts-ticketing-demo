@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue'
-import type { Issue, IssueStatus, IssuePriority, IssueVisibility } from '@/types/issue'
-import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
+import type { Issue, IssuePriority, IssueVisibility } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 import { useIssueDetail } from '@/composables/useIssueDetail'
 import { useCategories } from '@/composables/useCategories'
+import { useStatuses } from '@/composables/useStatuses'
 import { useSummaryStream } from '@/composables/useSummaryStream'
 import {
   Sheet,
@@ -53,6 +54,7 @@ import {
   AlertCircleIcon,
   ArrowRightIcon,
   RefreshCwIcon,
+  TicketPlusIcon,
 } from '@lucide/vue'
 import { apiPost } from '@/composables/useApiFetch'
 import { toast } from 'vue-sonner'
@@ -93,6 +95,7 @@ const {
 } = useIssueDetail()
 
 const { categories, fetchCategories } = useCategories()
+const { statuses, fetchStatuses } = useStatuses()
 
 const deleteDialogOpen = ref(false)
 const conflictDialogOpen = ref(false)
@@ -130,12 +133,7 @@ const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: 'low', label: 'Low' },
 ]
 
-// Status options for select
-const statusOptions: { value: IssueStatus; label: string }[] = [
-  { value: 'open', label: 'Open' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'resolved', label: 'Resolved' },
-]
+// Status options are sourced dynamically from useStatuses
 
 // Summary section computed state
 const summaryState = computed<'ready' | 'processing' | 'failed'>(() => {
@@ -172,7 +170,7 @@ watch(
   async ([isOpen, id]) => {
     if (isOpen && id) {
       await fetchIssue(id)
-      await fetchCategories()
+      await Promise.all([fetchCategories(), fetchStatuses()])
       setIssueQueryParam(id)
       syncLocalFields()
     } else if (!isOpen) {
@@ -254,8 +252,10 @@ function handlePriorityChange(value: unknown): void {
 }
 
 function handleStatusChange(value: unknown): void {
-  if (typeof value !== 'string') return
-  void patchIssue({ status: value })
+  // value is the status ID (passed as string from Select, we convert)
+  const id = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : null
+  if (id === null || isNaN(id)) return
+  void patchIssue({ status_id: id })
 }
 
 function handleCategoryChange(value: unknown): void {
@@ -454,7 +454,7 @@ async function handleRegenerate(): Promise<void> {
           <div class="space-y-1.5">
             <Label>Status</Label>
             <Select
-              :model-value="issue.status"
+              :model-value="String(issue.status_id)"
               :disabled="saving"
               @update:model-value="handleStatusChange"
             >
@@ -463,11 +463,11 @@ async function handleRegenerate(): Promise<void> {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem
-                  v-for="opt in statusOptions"
-                  :key="opt.value"
-                  :value="opt.value"
+                  v-for="s in statuses"
+                  :key="s.id"
+                  :value="String(s.id)"
                 >
-                  {{ opt.label }}
+                  {{ s.name }}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -601,6 +601,24 @@ async function handleRegenerate(): Promise<void> {
                     </p>
                     <p class="mt-0.5 text-sm text-foreground">
                       {{ issue.suggested_next_action }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- Suggested follow-up ticket card -->
+                <div
+                  v-if="issue.suggested_next_ticket"
+                  class="mt-2 flex gap-3 rounded-lg border border-border bg-muted/50 p-3"
+                >
+                  <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <TicketPlusIcon class="size-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Suggested Follow-up Ticket
+                    </p>
+                    <p class="mt-0.5 text-sm text-foreground">
+                      {{ issue.suggested_next_ticket }}
                     </p>
                   </div>
                 </div>

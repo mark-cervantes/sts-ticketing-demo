@@ -113,6 +113,7 @@ For the chosen class, walk the project's pitfall list. Every "do X, avoid Y" pai
 | Auth | Do: Breeze session via Inertia (no API tokens); Avoid: Sanctum/Passport assumptions |
 | Tests | Do: PHPUnit 12 with `--phpunit` flag on `make:test`; Avoid: Pest `it()`/`describe()` syntax |
 | Seeders | Do: idempotent seeders with `firstOrCreate` for categories; Avoid: blind `create()` causing unique constraint failures on re-seed |
+| Cross-origin | Do: nothing — stack is same-origin (Inertia + Breeze + Sail nginx); flag any introduction of `config/cors.php`, `SANCTUM_STATEFUL_DOMAINS`, `axios.create({ baseURL })`, or `VITE_API_URL` as an architectural change requiring its own task; Avoid: silently approving CORS additions because "the test passed" |
 
 For each row that applies: write a Technical Guidance bullet citing the file/ADR.
 
@@ -187,6 +188,7 @@ Apply the Cross-Cut Audit table (Enrichment Step 3) in reverse — for each row 
 | Summary re-trigger correctness | description-change dispatches `GenerateSummaryJob`; status-change does not |
 | PHPUnit (not Pest) | new tests extend `TestCase` and use `public function test_*` |
 | Pint clean | `./vendor/bin/sail pint --test --format agent` exits 0 |
+| Same-origin preserved | no new `config/cors.php`, no `SANCTUM_STATEFUL_DOMAINS`, no `axios.create({ baseURL })`, no `VITE_API_URL` introduced; if any appears → blocking finding |
 
 Every drift = advisory finding. Every broken acceptance criterion = blocking finding.
 

@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Issue;
 use App\Services\Summary\Drivers\LlmDriver;
 use App\Services\Summary\SummaryResult;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Config;
@@ -70,6 +71,7 @@ class LlmDriverTest extends TestCase
                             'content' => json_encode([
                                 'summary' => 'User reports 500 error on the login page when submitting with empty email.',
                                 'suggested_next_action' => 'Add server-side email validation before attempting authentication.',
+                                'suggested_next_ticket' => 'Add login validation tests — Write tests covering empty and invalid email edge cases.',
                             ]),
                         ],
                     ],
@@ -105,7 +107,7 @@ class LlmDriverTest extends TestCase
     {
         Http::fake([
             'llm.example.test/chat/completions' => function (Request $request) {
-                throw new \Illuminate\Http\Client\ConnectionException('Connection timed out.');
+                throw new ConnectionException('Connection timed out.');
             },
         ]);
 

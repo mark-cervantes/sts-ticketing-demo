@@ -21,9 +21,7 @@
             <!-- Brand content — top -->
             <div class="relative z-10">
                 <div class="mb-2 flex items-center gap-3">
-                    <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white/15 text-lg font-bold">
-                        S
-                    </div>
+                    <img src="/images/logo-icon.svg" alt="STS" class="h-10 w-auto brightness-0 invert" />
                     <span class="text-lg font-semibold tracking-wide opacity-90">STS</span>
                 </div>
             </div>
@@ -63,9 +61,7 @@
         <main class="flex flex-1 flex-col items-center justify-center bg-background px-6 py-12 sm:px-10">
             <!-- Mobile logo (only visible when left panel is hidden) -->
             <div class="mb-8 flex items-center gap-3 lg:hidden">
-                <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-                    S
-                </div>
+                <img src="/images/logo-icon.svg" alt="STS" class="h-10 w-auto" />
                 <span class="text-lg font-semibold text-foreground">Smart Ticketing System</span>
             </div>
 

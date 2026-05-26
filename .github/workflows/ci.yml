@@ -79,53 +79,46 @@ jobs:
 
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, sts]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
       - name: Deploy to production
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: 22
-          script_stop: true
-          script: |
-            set -e
+        run: |
+          set -e
 
-            APP_DIR="$HOME/projects/sts-ticketing"
+          APP_DIR="$HOME/projects/sts-ticketing"
 
-            # Clone or pull
-            if [ ! -d "$APP_DIR" ]; then
-              git clone git@github.com:mark-cervantes/sts-ticketing-demo.git "$APP_DIR"
-            fi
+          # Clone or pull
+          if [ ! -d "$APP_DIR" ]; then
+            git clone git@github.com:mark-cervantes/sts-ticketing-demo.git "$APP_DIR"
+          fi
 
-            cd "$APP_DIR"
-            git fetch origin main
-            git checkout main
-            git reset --hard origin/main
+          cd "$APP_DIR"
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
-            # Copy production env if first deploy
-            if [ ! -f .env ]; then
-              cp .env.production.example .env
-              echo "⚠️  First deploy: edit $APP_DIR/.env with production values, then re-run"
-              exit 1
-            fi
+          # Copy production env if first deploy
+          if [ ! -f .env ]; then
+            cp .env.production.example .env
+            echo "⚠️  First deploy: edit $APP_DIR/.env with production values, then re-run"
+            exit 1
+          fi
 
-            # Build and deploy
-            docker compose -f docker-compose.prod.yml build --no-cache
-            docker compose -f docker-compose.prod.yml down
-            docker compose -f docker-compose.prod.yml up -d
+          # Build and deploy
+          docker compose -f docker-compose.prod.yml build --no-cache
+          docker compose -f docker-compose.prod.yml down
+          docker compose -f docker-compose.prod.yml up -d
 
-            # Wait for app to be ready
-            echo "Waiting for app to start..."
-            sleep 10
+          # Wait for app to be ready
+          echo "Waiting for app to start..."
+          sleep 10
 
-            # Check health
-            docker compose -f docker-compose.prod.yml ps
-            echo ""
-            echo "✅ Deployment complete"
+          # Check health
+          docker compose -f docker-compose.prod.yml ps
+          echo ""
+          echo "✅ Deployment complete"
 
-            # Prune old images to save disk
-            docker image prune -f
+          # Prune old images to save disk
+          docker image prune -f

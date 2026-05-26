@@ -7,6 +7,7 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\IssueSseController;
 use App\Http\Controllers\ShareController;
+use App\Http\Controllers\StatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->apiResource('issues', IssueController::class);
@@ -14,6 +15,8 @@ Route::middleware('auth')->apiResource('issues', IssueController::class);
 Route::middleware('auth')->post('issues/{issue}/comments', [CommentController::class, 'store']);
 
 Route::middleware('auth')->apiResource('categories', CategoryController::class)->only(['index', 'store', 'destroy']);
+
+Route::middleware('auth')->apiResource('statuses', StatusController::class)->only(['index', 'store', 'update', 'destroy']);
 
 Route::middleware('auth')->get('issues/{issue}/stream', IssueSseController::class);
 
@@ -39,4 +42,5 @@ Route::middleware('auth')->group(function () {
     Route::put('settings/ai', [AiSettingsController::class, 'update']);
     Route::post('settings/ai/test', [AiSettingsController::class, 'test']);
     Route::get('settings/ai/models', [AiSettingsController::class, 'models']);
+    Route::get('settings/ai/presets', [AiSettingsController::class, 'presets']);
 });

@@ -1,6 +1,6 @@
 import { ref, readonly } from 'vue'
 import { toast } from 'vue-sonner'
-import type { Issue, IssueStatus } from '@/types/issue'
+import type { Issue } from '@/types/issue'
 import { apiFetch, apiPatch, apiDelete } from '@/composables/useApiFetch'
 import { useKanbanBoard } from '@/composables/useKanbanBoard'
 

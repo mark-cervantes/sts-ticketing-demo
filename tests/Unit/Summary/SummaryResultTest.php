@@ -18,6 +18,7 @@ class SummaryResultTest extends TestCase
         $result = new SummaryResult(
             summary: 'Login fails for users with special characters in their password.',
             suggestedNextAction: 'Update the auth middleware to skip pre-sanitization before hashing.',
+            suggestedNextTicket: 'Add auth regression test — Write automated tests for special-character password flows.',
             driver: 'rules',
         );
 
@@ -30,6 +31,7 @@ class SummaryResultTest extends TestCase
         $result = new SummaryResult(
             summary: 'Payment gateway returns 503 during peak hours.',
             suggestedNextAction: 'Increase timeout to 60s and add exponential backoff retry.',
+            suggestedNextTicket: 'Add payment gateway health check — Implement heartbeat monitoring.',
             driver: 'llm',
         );
 
@@ -42,6 +44,7 @@ class SummaryResultTest extends TestCase
         $result = new SummaryResult(
             summary: 'A billing issue was reported.',
             suggestedNextAction: 'Review billing logs.',
+            suggestedNextTicket: 'Audit billing transaction logs — Review logs for anomalies.',
             driver: 'llm',
         );
 
@@ -54,6 +57,7 @@ class SummaryResultTest extends TestCase
         $result = new SummaryResult(
             summary: 'Original summary text.',
             suggestedNextAction: 'Original action text.',
+            suggestedNextTicket: 'Original next ticket.',
             driver: 'rules',
         );
 
@@ -69,6 +73,7 @@ class SummaryResultTest extends TestCase
         $result = new SummaryResult(
             summary: 'Summary content.',
             suggestedNextAction: 'Original action.',
+            suggestedNextTicket: 'Original next ticket.',
             driver: 'rules',
         );
 

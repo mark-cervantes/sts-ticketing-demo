@@ -18,8 +18,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useIssueFilters } from '@/composables/useIssueFilters'
-import type { IssueStatus, IssuePriority } from '@/types/issue'
-import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
+import { useStatuses } from '@/composables/useStatuses'
+import type { IssuePriority } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 
 const emit = defineEmits<{
   (e: 'create-issue'): void
@@ -36,15 +37,17 @@ const {
   clearFilters,
 } = useIssueFilters()
 
-const allStatuses: IssueStatus[] = ['open', 'in_progress', 'resolved']
+const { statuses, loading: statusesLoading, fetchStatuses } = useStatuses()
+
 const allPriorities: IssuePriority[] = ['critical', 'high', 'medium', 'low']
 
 onMounted(() => {
   void fetchCategories()
+  void fetchStatuses()
 })
 
-function isStatusActive(status: IssueStatus): boolean {
-  return filters.value.statuses.includes(status)
+function isStatusActive(statusId: number): boolean {
+  return filters.value.statuses.includes(statusId)
 }
 
 function isPriorityActive(priority: IssuePriority): boolean {
@@ -58,7 +61,7 @@ function handleCategoryChange(value: string | number | bigint | Record<string, u
 
 const hasActiveFilters = computed(() => {
   return (
-    filters.value.statuses.length < 3 ||
+    filters.value.statuses.length < statuses.value.length ||
     filters.value.priorities.length > 0 ||
     filters.value.category !== null
   )
@@ -83,16 +86,26 @@ const hasActiveFilters = computed(() => {
           <CircleDotIcon class="size-3.5" />
           Status
         </h3>
-        <div class="flex flex-wrap gap-1.5">
+        <div v-if="statusesLoading" class="flex flex-wrap gap-1.5">
+          <Skeleton class="h-7 w-16 rounded-md" />
+          <Skeleton class="h-7 w-20 rounded-md" />
+          <Skeleton class="h-7 w-16 rounded-md" />
+        </div>
+        <div v-else class="flex flex-wrap gap-1.5">
           <Button
-            v-for="status in allStatuses"
-            :key="status"
+            v-for="status in statuses"
+            :key="status.id"
             size="sm"
-            :variant="isStatusActive(status) ? 'default' : 'outline'"
+            :variant="isStatusActive(status.id) ? 'default' : 'outline'"
             class="h-7 gap-1.5 text-xs"
-            @click="toggleStatus(status)"
+            @click="toggleStatus(status.id)"
           >
-            {{ STATUS_CONFIG[status].label }}
+            <!-- Color dot -->
+            <span
+              class="size-2 rounded-full shrink-0"
+              :style="{ backgroundColor: status.color }"
+            />
+            {{ status.name }}
           </Button>
         </div>
       </div>

@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\Status;
 use App\Models\Issue;
+use App\Models\IssueStatus;
 use Illuminate\Console\Command;
 
 /**
@@ -38,7 +38,9 @@ class RecalculateAttentionCommand extends Command
     {
         $count = 0;
 
-        Issue::whereIn('status', [Status::Open, Status::InProgress])
+        $statusIds = IssueStatus::whereIn('slug', ['open', 'in_progress'])->pluck('id');
+
+        Issue::whereIn('status_id', $statusIds)
             ->chunkById(200, function ($issues) use (&$count) {
                 foreach ($issues as $issue) {
                     $new = Issue::computeNeedsAttention($issue->priority, $issue->deadline_at);

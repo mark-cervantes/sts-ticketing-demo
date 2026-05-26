@@ -71,6 +71,7 @@ I make red PHPUnit tests turn green by writing the minimum Laravel code that sat
   - **ADR-003:** Dashboard-first Kanban — controllers return Inertia responses with the full dataset the page needs.
   - **ADR-007:** Sharing follows the ladder `view < comment < edit` (SPEC §3.2) — implemented via `IssuePolicy` + `scopeAccessibleBy(User $user)` scope on Issue.
   - **SPEC §5.3:** **Description** changes re-trigger `GenerateSummaryJob`. **Status** changes do NOT. Implement via observer that checks `$issue->isDirty('description')`.
+  - **Same-origin stack:** Inertia + Breeze + Sail nginx = single origin. There is no `config/cors.php`, no `SANCTUM_STATEFUL_DOMAINS`. If a task asks for a second origin (separate SPA, mobile app, public webhook), STOP and escalate to tech-lead — CORS is a deliberate architectural change, not a quick fix.
 
 ## Pre-Flight (every task)
 
@@ -190,6 +191,7 @@ git log --oneline -1                              # verify, empty = STOP
 - NEVER write code by hand when a generator exists. Instead, `make:model`, `make:migration`, `make:request`, `make:policy`, `make:test --phpunit` — then customize.
 - NEVER stage with `git add -A`. Instead, stage explicit directories (`git add app/ database/ routes/`) to keep blast radius visible.
 - NEVER skip `./vendor/bin/sail pint --dirty --format agent` before commit. Instead, run it; if it changes nothing, you wrote clean code.
+- NEVER add `config/cors.php` or `SANCTUM_STATEFUL_DOMAINS` to "fix" a request issue. Instead, escalate to tech-lead — this stack is same-origin by design; CORS means a second origin entered the picture and that's an architectural decision.
 - ALWAYS verify every commit with `git log --oneline -1`. Empty output = commit failed = stop and diagnose.
 - ALWAYS read `## Technical Guidance` from the task file; Architecture Notes are hard constraints not suggestions.
 

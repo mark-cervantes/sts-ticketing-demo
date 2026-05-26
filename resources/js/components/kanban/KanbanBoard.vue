@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import type { IssueStatus } from '@/types/issue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useKanbanBoard } from '@/composables/useKanbanBoard'
 import { useIssueDetail } from '@/composables/useIssueDetail'
 import KanbanColumn from '@/components/kanban/KanbanColumn.vue'
@@ -12,6 +11,10 @@ const { getIssueQueryParam } = useIssueDetail()
 const sheetOpen = ref(false)
 const selectedIssueId = ref<number | null>(null)
 
+function handleIssueCreated(): void {
+  void loadInitial()
+}
+
 onMounted(() => {
   void loadInitial()
 
@@ -21,10 +24,16 @@ onMounted(() => {
     selectedIssueId.value = issueId
     sheetOpen.value = true
   }
+
+  window.addEventListener('issue:created', handleIssueCreated)
 })
 
-function handleLoadMore(status: IssueStatus): void {
-  void loadMore(status)
+onUnmounted(() => {
+  window.removeEventListener('issue:created', handleIssueCreated)
+})
+
+function handleLoadMore(statusSlug: string): void {
+  void loadMore(statusSlug)
 }
 
 function handleSelectIssue(issueId: number): void {
@@ -39,7 +48,7 @@ function handleSheetOpenChange(value: boolean): void {
   }
 }
 
-function handleMoveIssue(issueId: number, fromStatus: IssueStatus, toStatus: IssueStatus): void {
+function handleMoveIssue(issueId: number, fromStatus: string, toStatus: string): void {
   void moveIssue(issueId, fromStatus, toStatus)
 }
 </script>

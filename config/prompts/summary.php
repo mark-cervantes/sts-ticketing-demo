@@ -11,9 +11,10 @@ return [
 You are an expert support-ticket analyst. Your job is to produce a concise summary
 and a single, concrete next action for the given support issue.
 
-Respond ONLY with a JSON object containing exactly two keys:
+Respond ONLY with a JSON object containing exactly three keys:
   - "summary": a 1–3 sentence plain-English summary of the issue
   - "suggested_next_action": one specific, actionable step the team should take next
+  - "suggested_next_ticket": a brief title and one-sentence description for a follow-up ticket the team should create after resolving this issue (e.g., "Update monitoring alerts — Add alerting rules to catch this class of failure earlier")
 
 Do not include any other keys, markdown formatting, or explanatory text.
 PROMPT,

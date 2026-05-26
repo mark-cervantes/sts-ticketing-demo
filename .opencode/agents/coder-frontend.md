@@ -73,6 +73,7 @@ I build a dashboard-first Kanban (ADR-003) in Vue 3 + Inertia + Tailwind v4. I a
 - **package.json scripts:** only `build` (`vue-tsc && vite build`) and `dev` (`vite`). No `type-check` script — to type-check standalone, run `./vendor/bin/sail npx vue-tsc --noEmit`.
 - **Ground-truth docs:** `vault/SPEC.md` (UI behavior in §5 & §7), `vault/docs/SRS.md` (§8 scenarios), `vault/docs/adr/003-dashboard-first-kanban.md`.
 - **Dashboard pattern (ADR-003):** all primary interactions happen on `/dashboard`. Issue detail = modal driven by `?issue=<id>` query param (`router.replace({ query: { issue: id } })`), not a separate page navigation.
+- **Same-origin stack:** Vite + Laravel are served from the same origin via Sail nginx. Vite's HMR host derives from `APP_URL` (see `vite.config.js`). You never need `axios.create({ baseURL: ... })`, never need a `VITE_API_URL`, never need to configure CORS. Inertia + Ziggy's `route()` handle URLs. If a task asks you to set a base URL for HTTP calls, STOP — that signals the architecture is changing; escalate to tech-lead.
 
 ## Pre-Flight (every task)
 
@@ -256,6 +257,7 @@ git log --oneline -1                  # verify, empty = STOP
 | Modal state in `ref` only, with no URL sync | "Closer to React mental model" | ADR-003 dashboard pattern: modal driven by `?issue=<id>` query param |
 | Spinners for loading states | Default UX habit | Step 4 + AGENTS.md preference: shadcn `<Skeleton />` only |
 | Inline labels above every field | Conservative form pattern | SPEC says placeholders-over-labels for short forms; use labels only when context is non-obvious |
+| `axios.create({ baseURL: 'http://localhost' })` or `fetch('http://localhost/api/...')` | Reflex from non-Inertia projects | Same-origin: use `useForm()` for mutations, `router.visit()` for nav, relative paths for SSE (`new EventSource('/issues/' + id + '/stream')`) — no base URL exists |
 
 ## Constraints
 

@@ -30,10 +30,12 @@ class RulesDriver implements SummaryGeneratorInterface
         $leadSentence = $this->extractLeadSentence($issue->description ?? '');
         $summary = $this->buildSummary($categoryName, $issue->title ?? '', $leadSentence);
         $action = $this->buildAction($categoryName, $priority);
+        $nextTicket = $this->buildNextTicket($categoryName, $priority);
 
         return new SummaryResult(
             summary: $summary,
             suggestedNextAction: $action,
+            suggestedNextTicket: $nextTicket,
             driver: 'rules',
         );
     }
@@ -97,5 +99,23 @@ class RulesDriver implements SummaryGeneratorInterface
         };
 
         return "$urgencyPrefix $categoryAction";
+    }
+
+    /**
+     * Build a deterministic follow-up ticket suggestion based on category and priority.
+     */
+    private function buildNextTicket(string $category, Priority $priority): string
+    {
+        $isHighSeverity = in_array($priority, [Priority::Critical, Priority::High], true);
+
+        return match (true) {
+            $category === 'billing' && $isHighSeverity => 'Audit payment retry logic — Review failed transaction handling for edge cases',
+            $category === 'billing' => 'Add payment gateway health check — Implement periodic heartbeat check to detect gateway degradation before it impacts users',
+            $category === 'technical' => 'Add regression test — Write an automated test to prevent this class of issue from recurring',
+            $category === 'bug' => 'Update error monitoring — Configure alerts for this error pattern to catch recurrences earlier',
+            $category === 'account' => 'Review account permission audit trail — Ensure account changes are logged for security and compliance review',
+            $category === 'feature-request' => 'Add to product roadmap — Schedule discovery session to scope and estimate the requested feature',
+            default => 'Review related documentation — Update runbooks or knowledge base to cover this scenario',
+        };
     }
 }

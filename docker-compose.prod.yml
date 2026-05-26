@@ -37,6 +37,9 @@ services:
       MAIL_PASSWORD: "${MAIL_PASSWORD:-}"
       MAIL_FROM_ADDRESS: "${MAIL_FROM_ADDRESS:-noreply@example.com}"
       MAIL_FROM_NAME: "${APP_NAME:-Ticketing}"
+      AI_PRESET_OPENROUTER_KEY: "${AI_PRESET_OPENROUTER_KEY:-}"
+      AI_PRESET_OLLAMA_KEY: "${AI_PRESET_OLLAMA_KEY:-}"
+      AI_PRESET_OLLAMA_URL: "${AI_PRESET_OLLAMA_URL:-https://ollama.com/api}"
     volumes:
       - app-public:/var/www/html/public
     depends_on:
@@ -128,6 +131,9 @@ services:
       QUEUE_CONNECTION: redis
       LOG_CHANNEL: stderr
       LOG_LEVEL: error
+      AI_PRESET_OPENROUTER_KEY: "${AI_PRESET_OPENROUTER_KEY:-}"
+      AI_PRESET_OLLAMA_KEY: "${AI_PRESET_OLLAMA_KEY:-}"
+      AI_PRESET_OLLAMA_URL: "${AI_PRESET_OLLAMA_URL:-https://ollama.com/api}"
     depends_on:
       app:
         condition: service_healthy

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Enums\SummaryStatus;
 use App\Enums\Visibility;
 use Carbon\CarbonImmutable;
@@ -15,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 /**
  * Issue model — core entity of the ticketing system.
@@ -27,10 +27,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'description',
     'priority',
     'category_id',
-    'status',
+    'status_id',
     'visibility',
     'summary',
     'suggested_next_action',
+    'suggested_next_ticket',
     'summary_status',
     'needs_attention',
     'deadline_at',
@@ -49,7 +50,6 @@ class Issue extends Model
     {
         return [
             'priority' => Priority::class,
-            'status' => Status::class,
             'visibility' => Visibility::class,
             'summary_status' => SummaryStatus::class,
             'deadline_at' => 'immutable_datetime',
@@ -110,6 +110,12 @@ class Issue extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /** The status of this issue. */
+    public function status(): BelongsTo
+    {
+        return $this->belongsTo(IssueStatus::class, 'status_id');
+    }
+
     /** Comments posted on this issue. */
     public function comments(): HasMany
     {
@@ -127,9 +133,10 @@ class Issue extends Model
     // -------------------------------------------------------------------------
 
     /**
-     * Scope to filter by status enum value.
+     * Scope to filter by status slug.
      *
-     * Silently ignores invalid status strings (tryFrom returns null → no-op).
+     * Resolves slug → status_id via subquery for backward compatibility.
+     * Silently ignores unknown slugs (no matching status row → no-op).
      */
     public function scopeFilterByStatus(Builder $query, ?string $value): Builder
     {
@@ -137,13 +144,10 @@ class Issue extends Model
             return $query;
         }
 
-        $status = Status::tryFrom($value);
-
-        if ($status === null) {
-            return $query;
-        }
-
-        return $query->where('status', $status);
+        return $query->where(
+            'status_id',
+            fn (QueryBuilder $q) => $q->select('id')->from('statuses')->where('slug', $value)
+        );
     }
 
     /**

@@ -29,7 +29,7 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Log in" />
+        <Head title="Sign in" />
 
         <Card class="border-border shadow-sm">
             <CardHeader class="space-y-1 pb-4">

@@ -27,6 +27,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings/ai', function () {
         return Inertia::render('Settings/AiSettings');
     })->name('settings.ai');
+
+    Route::get('/settings/statuses', function () {
+        return Inertia::render('Settings/StatusSettings');
+    })->name('settings.statuses');
 });
 
 require __DIR__.'/auth.php';

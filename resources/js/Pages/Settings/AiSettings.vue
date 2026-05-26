@@ -19,6 +19,7 @@ import {
   ChevronDownIcon,
   SearchIcon,
   ZapIcon,
+  Check,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { apiFetch, getCsrfToken } from '@/composables/useApiFetch'
@@ -30,13 +31,23 @@ defineOptions({ layout: AppLayout })
 // ─────────────────────────────────────────────────────────────
 
 interface AiSettingsData {
-  provider: 'rules' | 'openrouter' | 'custom'
+  provider: 'rules' | 'openrouter' | 'ollama' | 'custom'
   base_url: string | null
   api_key_set: boolean
   api_key_masked: string | null
   model: string | null
+  active_preset: string | null
   updated_by: { id: number; name: string } | null
   updated_at: string | null
+}
+
+interface AiPreset {
+  key: string
+  label: string
+  description: string
+  model: string
+  provider: string
+  configured: boolean
 }
 
 interface OpenRouterModel {
@@ -90,11 +101,20 @@ const modelSearch = ref('')
 const modelDropdownOpen = ref(false)
 
 const currentSettings = ref<AiSettingsData | null>(null)
+const availablePresets = ref<AiPreset[]>([])
 
-// Form state
-const selectedProvider = ref<'rules' | 'openrouter' | 'custom'>('rules')
+// Selection mode: 'preset:<key>' | 'rules' | 'custom'
+// We track this separately from the underlying provider to drive the UI.
+const selectionMode = ref<string>('rules')
+
+// Form state for custom / manual mode
+const selectedProvider = ref<'rules' | 'openrouter' | 'ollama' | 'custom'>('rules')
 const selectedBaseUrl = ref('')
 const selectedModel = ref('')
+
+// Preset model override — pre-filled with the preset's default, editable by the user.
+// Empty string means "use the preset default" — only sent to the server when changed.
+const presetModelOverride = ref('')
 
 // Models list from OpenRouter
 const openRouterModels = ref<OpenRouterModel[]>([])
@@ -107,11 +127,17 @@ const testResult = ref<TestResult | null>(null)
 // Computed
 // ─────────────────────────────────────────────────────────────
 
-const showConfigPanel = computed(() => selectedProvider.value !== 'rules')
-
-const showBaseUrlField = computed(
-  () => selectedProvider.value === 'custom',
+const activePresetKey = computed(() =>
+  selectionMode.value.startsWith('preset:') ? selectionMode.value.slice(7) : null,
 )
+
+const isPresetMode = computed(() => activePresetKey.value !== null)
+
+const isCustomMode = computed(() => selectionMode.value === 'custom')
+
+const showConfigPanel = computed(() => isCustomMode.value && selectedProvider.value !== 'rules')
+
+const showBaseUrlField = computed(() => selectedProvider.value === 'custom')
 
 const showModelTextInput = computed(() => selectedProvider.value === 'custom')
 
@@ -157,23 +183,44 @@ const lastUpdatedText = computed(() => {
 // ─────────────────────────────────────────────────────────────
 
 onMounted(() => {
-  void loadSettings()
+  void Promise.all([loadSettings(), loadPresets()])
 })
 
 // ─────────────────────────────────────────────────────────────
 // Functions
 // ─────────────────────────────────────────────────────────────
 
+async function loadPresets(): Promise<void> {
+  try {
+    const resp = await apiFetch<{ data: AiPreset[] }>('/api/settings/ai/presets')
+    availablePresets.value = resp.data
+  } catch {
+    // Non-fatal — presets just won't show
+    availablePresets.value = []
+  }
+}
+
 async function loadSettings(): Promise<void> {
   loading.value = true
   try {
     const resp = await apiFetch<{ data: AiSettingsData }>('/api/settings/ai')
     currentSettings.value = resp.data
-    selectedProvider.value = resp.data.provider
-    selectedBaseUrl.value = resp.data.base_url ?? ''
-    selectedModel.value = resp.data.model ?? ''
 
-    if (resp.data.provider === 'openrouter') {
+    // Determine selection mode from saved state
+    if (resp.data.active_preset) {
+      selectionMode.value = `preset:${resp.data.active_preset}`
+      // Pre-fill model override with the currently saved model (which may already be overridden).
+      presetModelOverride.value = resp.data.model ?? ''
+    } else if (resp.data.provider === 'rules') {
+      selectionMode.value = 'rules'
+    } else {
+      selectionMode.value = 'custom'
+      selectedProvider.value = resp.data.provider
+      selectedBaseUrl.value = resp.data.base_url ?? ''
+      selectedModel.value = resp.data.model ?? ''
+    }
+
+    if (resp.data.provider === 'openrouter' && !resp.data.active_preset) {
       void loadOpenRouterModels()
     }
   } catch {
@@ -188,20 +235,42 @@ async function loadOpenRouterModels(): Promise<void> {
   modelsLoading.value = true
   try {
     const resp = await apiFetch<{ data: OpenRouterModel[] }>('/api/settings/ai/models')
-    // OpenRouter returns { data: [...] }
     if (Array.isArray(resp.data)) {
       openRouterModels.value = resp.data
     }
   } catch {
-    // Non-fatal: user may not have a key yet
     openRouterModels.value = []
   } finally {
     modelsLoading.value = false
   }
 }
 
-function onProviderChange(value: string | number | bigint | Record<string, unknown> | null): void {
-  const provider = value as 'rules' | 'openrouter' | 'custom'
+function selectPreset(presetKey: string): void {
+  selectionMode.value = `preset:${presetKey}`
+  testResult.value = null
+  // Pre-fill with the preset's default model so the user can see and optionally change it.
+  const preset = availablePresets.value.find((p) => p.key === presetKey)
+  presetModelOverride.value = preset?.model ?? ''
+}
+
+function onModeChange(value: string | number | bigint | Record<string, unknown> | null): void {
+  const mode = value as string
+  selectionMode.value = mode
+  testResult.value = null
+
+  if (mode === 'custom') {
+    selectedProvider.value = 'custom'
+    selectedBaseUrl.value = ''
+    selectedModel.value = ''
+  } else if (mode === 'rules') {
+    selectedProvider.value = 'rules'
+    selectedBaseUrl.value = ''
+    selectedModel.value = ''
+  }
+}
+
+function onCustomProviderChange(value: string | number | bigint | Record<string, unknown> | null): void {
+  const provider = value as 'rules' | 'openrouter' | 'ollama' | 'custom'
   selectedProvider.value = provider
 
   if (provider === 'openrouter') {
@@ -213,7 +282,6 @@ function onProviderChange(value: string | number | bigint | Record<string, unkno
     selectedBaseUrl.value = ''
     selectedModel.value = ''
   }
-
   testResult.value = null
 }
 
@@ -229,14 +297,26 @@ async function save(): Promise<void> {
   testResult.value = null
 
   try {
-    const body: Record<string, unknown> = {
-      provider: selectedProvider.value,
-    }
+    let body: Record<string, unknown>
 
-    if (selectedProvider.value !== 'rules') {
-      if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
-      if (selectedModel.value) body.model = selectedModel.value
-      if (newApiKey.value.trim()) body.api_key = newApiKey.value.trim()
+    if (isPresetMode.value && activePresetKey.value) {
+      // Preset mode — server resolves provider/base_url/api_key from config.
+      // Include the model if the user changed it from the preset default.
+      const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
+      body = { preset: activePresetKey.value }
+      if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
+        body.model = presetModelOverride.value
+      }
+    } else if (selectionMode.value === 'rules') {
+      body = { provider: 'rules' }
+    } else {
+      // Custom / manual mode
+      body = { provider: selectedProvider.value }
+      if (selectedProvider.value !== 'rules') {
+        if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
+        if (selectedModel.value) body.model = selectedModel.value
+        if (newApiKey.value.trim()) body.api_key = newApiKey.value.trim()
+      }
     }
 
     const res = await fetch('/api/settings/ai', {
@@ -273,11 +353,22 @@ async function testConnection(): Promise<void> {
   testResult.value = null
 
   try {
-    const body: Record<string, unknown> = {
-      provider: selectedProvider.value,
-    }
+    // Build the test body. For preset mode, send the preset key so the server
+    // resolves the correct provider/api_key server-side (test-before-save).
+    const body: Record<string, unknown> = {}
 
-    if (selectedProvider.value !== 'rules') {
+    if (isPresetMode.value && activePresetKey.value) {
+      body.preset = activePresetKey.value
+      // Include model override if the user changed it from the preset default.
+      const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
+      if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
+        body.model = presetModelOverride.value
+      }
+    } else if (selectionMode.value === 'rules') {
+      body.provider = 'rules'
+    } else {
+      // Custom mode — include unsaved field overrides.
+      body.provider = selectedProvider.value
       if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
       if (selectedModel.value) body.model = selectedModel.value
       if (newApiKey.value.trim()) body.api_key = newApiKey.value.trim()
@@ -317,7 +408,6 @@ function formatPrice(price: string): string {
   if (price === '0') return 'Free'
   const n = parseFloat(price)
   if (isNaN(n)) return price
-  // Price is per token, display per million tokens
   return `$${(n * 1_000_000).toFixed(2)}/M`
 }
 
@@ -356,7 +446,7 @@ function formatContext(length: number): string {
               <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Active Configuration</p>
               <div class="flex items-center gap-2">
                 <Badge variant="secondary" class="capitalize">
-                  {{ currentSettings?.provider ?? '—' }}
+                  {{ currentSettings?.active_preset ?? currentSettings?.provider ?? '—' }}
                 </Badge>
                 <span v-if="currentSettings?.model" class="text-sm text-muted-foreground font-mono">
                   {{ currentSettings.model }}
@@ -370,24 +460,81 @@ function formatContext(length: number): string {
         </CardHeader>
       </Card>
 
-      <!-- Provider selection card -->
+      <!-- ── Pre-configured Providers (preset cards) ─────────────────────── -->
       <Card class="mb-4">
         <CardHeader>
-          <h2 class="pt-3 px-1 text-sm font-semibold text-foreground">Provider</h2>
+          <h2 class="pt-3 px-1 text-sm font-semibold text-foreground">Pre-configured Providers</h2>
+          <p class="px-1 pb-1 text-xs text-muted-foreground">One-click setup — API keys are managed server-side and never exposed</p>
+        </CardHeader>
+        <CardContent>
+          <div v-if="availablePresets.length > 0" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              v-for="preset in availablePresets"
+              :key="preset.key"
+              type="button"
+              class="relative flex flex-col items-start gap-1.5 rounded-lg border p-4 text-left transition-all hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :class="{
+                'border-primary bg-primary/5 shadow-sm': selectionMode === `preset:${preset.key}`,
+                'border-border': selectionMode !== `preset:${preset.key}`,
+                'opacity-50 cursor-not-allowed': !preset.configured,
+              }"
+              :disabled="!preset.configured"
+              @click="selectPreset(preset.key)"
+            >
+              <!-- Active checkmark -->
+              <span
+                v-if="selectionMode === `preset:${preset.key}`"
+                class="absolute right-3 top-3 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+              >
+                <Check class="size-3" />
+              </span>
+
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-foreground">{{ preset.label }}</span>
+                <Badge v-if="!preset.configured" variant="outline" class="text-xs">Not configured</Badge>
+              </div>
+              <p class="text-xs text-muted-foreground line-clamp-2">{{ preset.description }}</p>
+              <span class="mt-0.5 font-mono text-xs text-muted-foreground">{{ preset.model }}</span>
+
+              <!-- Active preset indicator -->
+              <span
+                v-if="currentSettings?.active_preset === preset.key"
+                class="mt-1 text-xs font-medium text-primary"
+              >● Currently active</span>
+            </button>
+          </div>
+
+          <div v-else class="rounded-lg border border-dashed border-border p-6 text-center">
+            <p class="text-sm text-muted-foreground">No presets configured on this server.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- ── Divider ───────────────────────────────────────────────────────── -->
+      <div class="relative mb-4 flex items-center">
+        <Separator class="flex-1" />
+        <span class="mx-3 shrink-0 text-xs text-muted-foreground">or choose manually</span>
+        <Separator class="flex-1" />
+      </div>
+
+      <!-- ── Manual Provider Selection ─────────────────────────────────────── -->
+      <Card class="mb-4">
+        <CardHeader>
+          <h2 class="pt-3 px-1 text-sm font-semibold text-foreground">Manual Selection</h2>
         </CardHeader>
         <CardContent>
           <RadioGroup
-            :model-value="selectedProvider"
+            :model-value="selectionMode"
             class="space-y-3"
-            @update:model-value="onProviderChange"
+            @update:model-value="onModeChange"
           >
             <!-- Rules Engine -->
             <label
-              for="provider-rules"
+              for="mode-rules"
               class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-muted/40"
-              :class="{ 'border-primary bg-primary/5': selectedProvider === 'rules' }"
+              :class="{ 'border-primary bg-primary/5': selectionMode === 'rules' }"
             >
-              <RadioGroupItem id="provider-rules" value="rules" class="mt-0.5" />
+              <RadioGroupItem id="mode-rules" value="rules" class="mt-0.5" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-medium text-foreground">Rules Engine</span>
@@ -399,38 +546,20 @@ function formatContext(length: number): string {
               </div>
             </label>
 
-            <!-- OpenRouter -->
+            <!-- Custom / Self-hosted -->
             <label
-              for="provider-openrouter"
+              for="mode-custom"
               class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-muted/40"
-              :class="{ 'border-primary bg-primary/5': selectedProvider === 'openrouter' }"
+              :class="{ 'border-primary bg-primary/5': selectionMode === 'custom' }"
             >
-              <RadioGroupItem id="provider-openrouter" value="openrouter" class="mt-0.5" />
+              <RadioGroupItem id="mode-custom" value="custom" class="mt-0.5" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-foreground">OpenRouter</span>
-                  <Badge variant="outline" class="text-xs">300+ models</Badge>
+                  <span class="text-sm font-medium text-foreground">Custom Provider</span>
+                  <Badge variant="outline" class="text-xs">Bring your own key</Badge>
                 </div>
                 <p class="mt-0.5 text-xs text-muted-foreground">
-                  Access 300+ AI models via OpenRouter. Requires API key.
-                </p>
-              </div>
-            </label>
-
-            <!-- Custom / Ollama -->
-            <label
-              for="provider-custom"
-              class="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-muted/40"
-              :class="{ 'border-primary bg-primary/5': selectedProvider === 'custom' }"
-            >
-              <RadioGroupItem id="provider-custom" value="custom" class="mt-0.5" />
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-medium text-foreground">Custom / Ollama</span>
-                  <Badge variant="outline" class="text-xs">Self-hosted</Badge>
-                </div>
-                <p class="mt-0.5 text-xs text-muted-foreground">
-                  Connect to any OpenAI-compatible API endpoint.
+                  Connect to OpenRouter, Ollama, or any OpenAI-compatible endpoint with your own key.
                 </p>
               </div>
             </label>
@@ -438,12 +567,75 @@ function formatContext(length: number): string {
         </CardContent>
       </Card>
 
-      <!-- Configuration panel (hidden for Rules) -->
-      <Card v-if="showConfigPanel" class="mb-4">
+      <!-- ── Active Preset Info (when preset is selected) ─────────────────── -->
+      <Card v-if="isPresetMode" class="mb-4 border-primary/30 bg-primary/5">
+        <CardContent class="pt-5 pb-4 px-5">
+          <div class="flex items-start gap-3">
+            <CheckCircle2Icon class="mt-0.5 size-4 shrink-0 text-primary" />
+            <div class="flex-1 min-w-0">
+              <template v-for="preset in availablePresets" :key="preset.key">
+                <template v-if="preset.key === activePresetKey">
+                  <p class="text-sm font-medium text-foreground">
+                    {{ preset.label }} <span class="font-normal text-muted-foreground">(pre-configured)</span>
+                  </p>
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    API key is managed server-side — no key entry required.
+                  </p>
+                  <!-- Editable model override -->
+                  <div class="mt-3 space-y-1.5">
+                    <Label for="preset-model-override" class="text-xs font-medium text-foreground">
+                      Model
+                      <span class="ml-1 font-normal text-muted-foreground">(default: {{ preset.model }})</span>
+                    </Label>
+                    <Input
+                      id="preset-model-override"
+                      v-model="presetModelOverride"
+                      type="text"
+                      :placeholder="preset.model"
+                      class="h-8 font-mono text-xs bg-background"
+                    />
+                    <p class="text-xs text-muted-foreground">
+                      Leave as-is to use the preset default, or type a different model ID to override.
+                    </p>
+                  </div>
+                </template>
+              </template>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- ── Custom Configuration Panel ───────────────────────────────────── -->
+      <Card v-if="isCustomMode" class="mb-4">
         <CardHeader>
-          <h2 class="pt-3 px-1 text-sm font-semibold text-foreground">Configuration</h2>
+          <h2 class="pt-3 px-1 text-sm font-semibold text-foreground">Custom Configuration</h2>
         </CardHeader>
         <CardContent class="space-y-5">
+          <!-- Sub-provider selection -->
+          <div class="space-y-1.5">
+            <Label class="text-sm font-medium">Provider type</Label>
+            <RadioGroup
+              :model-value="selectedProvider"
+              class="grid grid-cols-3 gap-2"
+              @update:model-value="onCustomProviderChange"
+            >
+              <label
+                v-for="p in [
+                  { value: 'openrouter', label: 'OpenRouter' },
+                  { value: 'ollama', label: 'Ollama' },
+                  { value: 'custom', label: 'Other' },
+                ]"
+                :key="p.value"
+                :for="`custom-provider-${p.value}`"
+                class="flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-muted/40"
+                :class="{ 'border-primary bg-primary/5': selectedProvider === p.value }"
+              >
+                <RadioGroupItem :id="`custom-provider-${p.value}`" :value="p.value" />
+                {{ p.label }}
+              </label>
+            </RadioGroup>
+          </div>
+
           <!-- API Key -->
           <div class="space-y-1.5">
             <Label for="api-key" class="text-sm font-medium">
@@ -474,31 +666,31 @@ function formatContext(length: number): string {
             </p>
           </div>
 
-          <!-- Base URL (custom provider only) -->
-          <div v-if="showBaseUrlField" class="space-y-1.5">
+          <!-- Base URL -->
+          <div class="space-y-1.5">
             <Label for="base-url" class="text-sm font-medium">Base URL</Label>
             <Input
               id="base-url"
               v-model="selectedBaseUrl"
               type="url"
-              placeholder="http://localhost:11434/v1"
+              :placeholder="selectedProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://localhost:11434/v1'"
               class="font-mono text-sm"
             />
             <p class="text-xs text-muted-foreground">
-              OpenAI-compatible endpoint (e.g. Ollama at localhost:11434).
+              OpenAI-compatible endpoint. Leave blank to use the provider default.
             </p>
           </div>
 
           <Separator />
 
-          <!-- Model — text input for custom -->
-          <div v-if="showModelTextInput" class="space-y-1.5">
+          <!-- Model — text input for non-openrouter custom -->
+          <div v-if="showModelTextInput || selectedProvider !== 'openrouter'" class="space-y-1.5">
             <Label for="model-input" class="text-sm font-medium">Model</Label>
             <Input
               id="model-input"
               v-model="selectedModel"
               type="text"
-              placeholder="llama3.2:3b"
+              :placeholder="selectedProvider === 'openrouter' ? 'google/gemini-2.5-flash' : 'llama3.2:3b'"
               class="font-mono text-sm"
             />
             <p class="text-xs text-muted-foreground">
@@ -507,9 +699,9 @@ function formatContext(length: number): string {
           </div>
 
           <!-- Model — searchable dropdown for OpenRouter -->
-          <div v-else-if="selectedProvider === 'openrouter'" class="space-y-1.5">
+          <div v-if="selectedProvider === 'openrouter' && openRouterModels.length > 0" class="space-y-1.5">
             <div class="flex items-center justify-between">
-              <Label class="text-sm font-medium">Model</Label>
+              <Label class="text-sm font-medium">Browse Models</Label>
               <div class="flex items-center gap-3">
                 <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
                   <input
@@ -608,11 +800,6 @@ function formatContext(length: number): string {
                 </div>
               </div>
             </div>
-
-            <!-- Currently selected display -->
-            <p v-if="selectedModel" class="text-xs text-muted-foreground font-mono">
-              Selected: {{ selectedModel }}
-            </p>
           </div>
         </CardContent>
       </Card>

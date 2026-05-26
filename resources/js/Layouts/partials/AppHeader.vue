@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePage, Link, router } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon } from '@lucide/vue'
+import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon, CircleDotIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -47,8 +47,8 @@ function handleLogout(): void {
 
     <!-- Logo / App name -->
     <Link :href="route('dashboard')" class="flex items-center gap-2 font-heading font-semibold text-foreground">
-      <span class="text-primary text-lg font-bold">●</span>
-      <span class="hidden sm:inline">Ticketing</span>
+      <img src="/images/logo-icon.svg" alt="STS" class="h-6 w-auto" />
+      <span class="hidden sm:inline">STS</span>
     </Link>
 
     <div class="flex-1" />
@@ -62,6 +62,18 @@ function handleLogout(): void {
     >
       <Link :href="route('settings.ai')">
         <BrainCircuitIcon class="size-5" />
+      </Link>
+    </Button>
+
+    <!-- Status Management -->
+    <Button
+      as-child
+      variant="ghost"
+      size="icon"
+      aria-label="Manage statuses"
+    >
+      <Link href="/settings/statuses">
+        <CircleDotIcon class="size-5" />
       </Link>
     </Button>
 

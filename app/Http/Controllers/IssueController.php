@@ -47,7 +47,7 @@ class IssueController extends Controller
         $query = Issue::query()
             ->select('issues.*')
             ->selectRaw("CASE priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END AS priority_order")
-            ->with(['category', 'user'])
+            ->with(['category', 'user', 'status'])
             ->withCount('comments')
             ->accessibleBy($request->user());
 
@@ -115,7 +115,7 @@ class IssueController extends Controller
     {
         $this->authorize('view', $issue);
 
-        $issue->load(['comments.user', 'comments.reactions.user', 'category', 'user']);
+        $issue->load(['comments.user', 'comments.reactions.user', 'category', 'user', 'status']);
 
         return new IssueResource($issue);
     }
