@@ -151,6 +151,10 @@ export interface KanbanColumnDef {
   loading: boolean
   hasMore: boolean
   currentPage: number
+  /** Whether this column is the default status (prevents deletion). */
+  isDefault: boolean
+  /** Number of issues in this column (for delete-with-migration modal). */
+  issueCount: number
 }
 
 /** Priority metadata for display & badge styling. */

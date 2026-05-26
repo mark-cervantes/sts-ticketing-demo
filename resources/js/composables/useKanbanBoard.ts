@@ -128,16 +128,21 @@ export function useKanbanBoard() {
     return statuses.value
       .filter((s) => filters.value.statuses.includes(s.id))
       .sort((a, b) => a.sort_order - b.sort_order)
-      .map((status) => ({
-        status: status.slug,
-        statusId: status.id,
-        label: status.name,
-        color: status.color,
-        issues: columnMap.value[status.slug] ?? [],
-        loading: columnLoading.value[status.slug] ?? false,
-        hasMore: paginationState.value[status.slug]?.hasMore ?? false,
-        currentPage: paginationState.value[status.slug]?.currentPage ?? 1,
-      }))
+      .map((status) => {
+        const issues = columnMap.value[status.slug] ?? []
+        return {
+          status: status.slug,
+          statusId: status.id,
+          label: status.name,
+          color: status.color,
+          issues,
+          loading: columnLoading.value[status.slug] ?? false,
+          hasMore: paginationState.value[status.slug]?.hasMore ?? false,
+          currentPage: paginationState.value[status.slug]?.currentPage ?? 1,
+          isDefault: status.is_default,
+          issueCount: issues.length,
+        }
+      })
   })
 
   async function loadInitial(): Promise<void> {
