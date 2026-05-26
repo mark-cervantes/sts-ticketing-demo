@@ -370,12 +370,12 @@ function handleDragEnd(evt: { from: HTMLElement; to: HTMLElement; item: HTMLElem
         :key="issue.id"
         :data-issue-id="issue.id"
         :data-from-status="issue.status"
-        :class="{ 'no-drag': issue.can_update === false }"
+        :class="{ 'no-drag': issue.can?.update === false }"
         class="relative"
       >
         <!-- View-only lock indicator -->
         <span
-          v-if="issue.can_update === false"
+          v-if="issue.can?.update === false"
           class="absolute right-2 top-2 z-10 text-muted-foreground/50"
           title="You can only view this issue — ask the owner for edit access"
         >

@@ -681,7 +681,7 @@ function handleFollowUpCreated(): void {
         <CommentThread
           :comments="issue.comments ?? []"
           :issue-id="issue.id"
-          :can-comment="issue.can_comment ?? false"
+          :can-comment="issue.can?.comment ?? false"
           :comments-count="issue.comments_count"
           :issue-status="issue.status"
         />
