@@ -1,4 +1,5 @@
 import { ref, computed, watch } from 'vue'
+import { usePage } from '@inertiajs/vue3'
 import { toast } from 'vue-sonner'
 import type {
   Issue,
@@ -6,8 +7,10 @@ import type {
   KanbanColumnDef,
   PaginatedResponse,
 } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 import { useIssueFilters } from '@/composables/useIssueFilters'
 import { useStatuses } from '@/composables/useStatuses'
+import { useColumnSort } from '@/composables/useColumnSort'
 import { apiFetch, apiPatch, buildQueryString } from '@/composables/useApiFetch'
 
 const PER_PAGE = 15
@@ -18,7 +21,7 @@ const PER_PAGE = 15
  */
 const columnMap = ref<Record<string, Issue[]>>({})
 
-const paginationState = ref<Record<string, { currentPage: number; hasMore: boolean }>>({})
+const paginationState = ref<Record<string, { currentPage: number; hasMore: boolean; total: number }>>({})
 
 const initialLoading = ref(false)
 const columnLoading = ref<Record<string, boolean>>({})
@@ -26,16 +29,18 @@ const columnLoading = ref<Record<string, boolean>>({})
 /**
  * Fetch issues for a single status column using the status slug.
  * Backend scopeFilterByStatus accepts slug strings for backward compat.
+ * @param perPage - Override per-page count (defaults to module-level PER_PAGE)
  */
 async function fetchColumn(
   statusSlug: string,
   page: number,
   priorityFilter: string[],
   categoryFilter: string | null,
+  perPage: number = PER_PAGE,
 ): Promise<PaginatedResponse<Issue>> {
   const params: Record<string, string> = {
     status: statusSlug,
-    per_page: String(PER_PAGE),
+    per_page: String(perPage),
     page: String(page),
   }
   if (priorityFilter.length > 0) {
@@ -53,7 +58,7 @@ async function fetchColumn(
  */
 function initMaps(statuses: IssueStatus[]): void {
   const newColumnMap: Record<string, Issue[]> = {}
-  const newPagination: Record<string, { currentPage: number; hasMore: boolean }> = {}
+  const newPagination: Record<string, { currentPage: number; hasMore: boolean; total: number }> = {}
   const newLoading: Record<string, boolean> = {}
 
   for (const status of statuses) {
@@ -62,6 +67,7 @@ function initMaps(statuses: IssueStatus[]): void {
     newPagination[status.slug] = paginationState.value[status.slug] ?? {
       currentPage: 1,
       hasMore: false,
+      total: 0,
     }
     newLoading[status.slug] = columnLoading.value[status.slug] ?? false
   }
@@ -117,19 +123,70 @@ function removeIssueFromBoard(issueId: number, statusSlug: string): void {
   }
 }
 
+/**
+ * Sort issues by the given sort key.
+ * Returns a NEW array (slice) to avoid mutating columnMap.
+ */
+function sortIssues(issues: Issue[], sortKey: string): Issue[] {
+  const sorted = issues.slice()
+  switch (sortKey) {
+    case 'priority':
+      sorted.sort((a, b) => {
+        const aOrder = PRIORITY_CONFIG[a.priority]?.order ?? 99
+        const bOrder = PRIORITY_CONFIG[b.priority]?.order ?? 99
+        return aOrder - bOrder
+      })
+      break
+    case 'newest':
+      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at))
+      break
+    case 'updated':
+      sorted.sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      break
+    case 'oldest':
+      sorted.sort((a, b) => a.created_at.localeCompare(b.created_at))
+      break
+  }
+  return sorted
+}
+
 export function useKanbanBoard() {
-  const { filters, initStatusesFilter } = useIssueFilters()
+  const { filters, myTickets, initStatusesFilter } = useIssueFilters()
   const { statuses, fetchStatuses } = useStatuses()
+  const { sortMap, getSortKey } = useColumnSort()
+
+  // Read auth user ID once at setup time — NOT inside the computed.
+  // Per tech-lead warning: calling usePage() inside computed risks stale refs.
+  const page = usePage()
+  const authUserId = page.props.auth?.user?.id as number | undefined
 
   /**
    * Columns ordered by sort_order, filtered by selected status IDs.
+   * Applies "My Tickets" client-side filter and per-column sorting.
+   *
+   * NOTE: sortMap is accessed here to ensure this computed re-evaluates
+   * when sort keys change.
    */
   const columns = computed<KanbanColumnDef[]>(() => {
+    // Access sortMap.value to make Vue track changes to sort keys
+    const _sortMap = sortMap.value
+
     return statuses.value
       .filter((s) => filters.value.statuses.includes(s.id))
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((status) => {
-        const issues = columnMap.value[status.slug] ?? []
+        let issues = columnMap.value[status.slug] ?? []
+
+        // Apply "My Tickets" client-side filter (no API re-fetch)
+        const totalBeforeMyTickets = issues.length
+        if (myTickets.value && authUserId !== undefined) {
+          issues = issues.filter((issue) => issue.user?.id === authUserId)
+        }
+
+        // Apply per-column sort
+        const sortKey = _sortMap[status.slug] ?? getSortKey(status.slug)
+        issues = sortIssues(issues, sortKey)
+
         return {
           status: status.slug,
           statusId: status.id,
@@ -141,6 +198,11 @@ export function useKanbanBoard() {
           currentPage: paginationState.value[status.slug]?.currentPage ?? 1,
           isDefault: status.is_default,
           issueCount: issues.length,
+          isResolved: status.slug === 'resolved',
+          totalCount: myTickets.value
+            // When "My Tickets" is active, totalCount is the unfiltered column length
+            ? totalBeforeMyTickets
+            : paginationState.value[status.slug]?.total ?? issues.length,
         }
       })
   })
@@ -173,6 +235,7 @@ export function useKanbanBoard() {
         paginationState.value[status.slug] = {
           currentPage: result.meta.current_page,
           hasMore: result.meta.current_page < result.meta.last_page,
+          total: result.meta.total,
         }
       }
     } catch (err) {
@@ -201,6 +264,7 @@ export function useKanbanBoard() {
       paginationState.value[statusSlug] = {
         currentPage: result.meta.current_page,
         hasMore: result.meta.current_page < result.meta.last_page,
+        total: result.meta.total,
       }
     } catch {
       const label = statusObj?.name ?? statusSlug
@@ -356,6 +420,8 @@ export function useKanbanBoard() {
   }
 
   // Re-fetch when filters change (priority, category — status hides columns client-side)
+  // "My Tickets" is intentionally excluded — it is client-side filtering only
+  // and must NOT trigger a round-trip that clears the board.
   watch(
     () => [filters.value.priorities.slice(), filters.value.category] as const,
     () => {

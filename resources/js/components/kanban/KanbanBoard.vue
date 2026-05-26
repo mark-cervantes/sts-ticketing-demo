@@ -214,6 +214,7 @@ async function handleColumnDeleted(): Promise<void> {
           :skeleton-loading="initialLoading"
           :edit-mode="editMode"
           :all-columns="localColumns"
+          :default-collapsed="col.isResolved"
           @load-more="handleLoadMore"
           @select-issue="handleSelectIssue"
           @move-issue="handleMoveIssue"
