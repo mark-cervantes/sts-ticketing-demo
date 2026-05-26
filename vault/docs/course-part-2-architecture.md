@@ -1819,6 +1819,38 @@ If you do that consistently, Eloquent models become much easier to understand.
 
 ## §6 The Service Layer
 
+### NestJS translation first
+
+If you come from NestJS, this section should feel familiar.
+
+`IssueService` is the closest thing in this repo to a classic Nest service:
+
+- controller delegates to it
+- it owns business workflow decisions
+- it talks to the persistence layer
+- it triggers side effects
+
+The main difference is not *what* it does, but *what sits under it*.
+
+In many Nest projects, a service calls:
+
+- repository
+- Prisma client
+- TypeORM repository
+- another provider
+
+In this Laravel project, the service usually calls **Eloquent models directly**.
+
+So the mental model is:
+
+```text
+NestJS: Controller -> Service -> Repository/ORM
+Laravel here: Controller -> Service -> Eloquent Model
+```
+
+That is not a shortcut or a code smell by itself. It is simply the native style
+of an Active Record framework.
+
 ### When to use a service class
 
 This project uses one primary service: `IssueService`. There is no
@@ -1836,6 +1868,34 @@ needed. Comment creation: `Comment::create([...])`. No service needed.
 
 Issue creation and update: non-trivial. Needs optimistic locking, conditional
 job dispatch, default setting, event wiring. Lives in `IssueService`.
+
+This is one of the most important architecture judgment calls in a Laravel app:
+
+> **Do not create services just to say you have a service layer. Create them when a workflow has enough moving parts to deserve one.**
+
+This project makes that call well. It does not force every model through an
+empty service class just for symmetry.
+
+### What a service owns in this project
+
+The service layer here owns **workflow logic**, not raw data shape and not raw
+authorization rules.
+
+That means `IssueService` is responsible for questions like:
+
+- What defaults should be applied when an issue is created?
+- What counts as a stale update?
+- When should a summary job be requeued?
+- Which side effects happen after mutation?
+
+It is **not** responsible for:
+
+- validating whether `priority` is one of the enum values (Form Request)
+- deciding whether the user may update the issue (Policy)
+- defining relationships (Model)
+- shaping response JSON (Resource)
+
+That boundary is what makes the service layer useful instead of redundant.
 
 ### Reading IssueService::create()
 
@@ -1877,6 +1937,56 @@ public function create(User $user, array $data): Issue
    controller just passes the issue to `IssueResource` without knowing what
    needs to be loaded.
 
+### Why `create()` belongs in a service instead of the model
+
+A reasonable learner question is:
+
+> Why not just put all this into `Issue::createIssue(...)` or into a model method?
+
+Because the workflow is bigger than “how an issue behaves as a model.”
+
+`create()` combines:
+
+- persistence
+- defaults
+- async side effect dispatch
+- response-readiness loading
+
+That is a **use-case workflow**, not just intrinsic entity behavior.
+
+The model should know what an issue *is*.
+The service should know what happens when you *perform the create issue use case*.
+
+That is the key distinction.
+
+### Service layer and side effects
+
+The line:
+
+```php
+dispatch(new GenerateSummaryJob($issue));
+```
+
+is exactly the kind of thing that justifies a service layer.
+
+Why?
+
+Because the controller should not become the system's side-effect scheduler.
+If the controller starts owning dispatch decisions, it becomes harder to:
+
+- reuse the workflow elsewhere
+- test the workflow cleanly
+- evolve side effects later
+
+For example, if later you add:
+
+- analytics event
+- audit log record
+- notification
+- second background job
+
+the service is the right place to compose those mutation consequences.
+
 ### Reading IssueService::update() — optimistic locking
 
 ```php
@@ -1904,6 +2014,23 @@ This is a **custom architecture pattern** (§11). Laravel does not provide
 optimistic locking built-in. The service implements it directly using timestamps
 as the concurrency token.
 
+This is a very good example of an app-specific invariant living at the service
+layer.
+
+Why not put this in the controller?
+
+- because conflict detection is business workflow, not transport parsing
+- because multiple update entrypoints could reuse it
+- because the service already owns mutation orchestration
+
+Why not put this in the model?
+
+- because the model does not know the *client's last-seen timestamp*
+- because this is a request-time concurrency contract, not a universal model
+  invariant like `needs_attention`
+
+That is an excellent boundary decision.
+
 **Why `updated_at` instead of a dedicated `lock_version` column?**
 
 See the reality check in `technical-assessment-course.md §16`: some early docs
@@ -1926,6 +2053,152 @@ This is a subtle implementation detail. In PostgreSQL test transactions,
 transaction would produce the same `updated_at`. Manually advancing by one
 second ensures the update always produces a strictly later timestamp.
 
+### Why the manual `updated_at` bump looks weird — and why it exists
+
+This code is unusual enough that it deserves a teaching note.
+
+```php
+$newUpdatedAt = $issue->updated_at->addSecond();
+$issue->timestamps = false;
+$issue->updated_at = $newUpdatedAt;
+$issue->save();
+$issue->timestamps = true;
+```
+
+At first glance, this can feel like a hack. In a sense, it is a **targeted
+technical workaround**, but it is a justified one.
+
+The underlying issue is test/runtime determinism with PostgreSQL timestamps in a
+transactional context. If two rapid updates land inside the same timestamp
+resolution window, the optimistic-lock token may not advance the way the test
+expects.
+
+So the code chooses explicitness over pretending the timing issue does not
+exist.
+
+This teaches an important architecture lesson:
+
+> Sometimes the cleanest design still needs a small tactical workaround at the implementation layer. The key is to keep the workaround local and explainable.
+
+This project does that reasonably well.
+
+### Conditional side effects on update
+
+In `IssueService::update()`, one rule matters a lot:
+
+```php
+$descriptionChanged = isset($data['description'])
+    && $data['description'] !== $issue->description;
+```
+
+If the description changed:
+
+- `summary_status` resets to `Pending`
+- `GenerateSummaryJob` is dispatched again
+
+If only status/priority/etc. changed, summary regeneration does **not** happen.
+
+This is exactly the kind of business rule that belongs in a service. It is not
+just data persistence — it is mutation semantics.
+
+### Service layer vs model layer — the practical boundary in this app
+
+Use this project to memorize a very helpful distinction:
+
+#### Model layer owns
+
+- relationships
+- casts
+- query scopes
+- automatic invariants on save
+- small pure domain helpers
+
+#### Service layer owns
+
+- multi-step workflows
+- request-time concurrency checks
+- deciding which side effects fire
+- orchestration across persistence + jobs
+- defaults tied to use cases
+
+That distinction is one of the cleanest architecture lessons this repo can
+teach you.
+
+### Why this is not just a “fat model moved elsewhere”
+
+Some developers criticize service layers by saying:
+
+> “You just moved logic out of the controller into another class.”
+
+That criticism is fair when services are thin pass-through wrappers.
+
+But `IssueService` is not a pointless wrapper. It owns real workflow decisions:
+
+- create defaults
+- update conflict handling
+- summary regeneration rules
+- post-save job dispatch
+
+That is enough substance to justify the abstraction.
+
+### What this service layer deliberately avoids
+
+The service layer here is also disciplined because it does **not** try to own
+everything.
+
+It does not:
+
+- duplicate validation rules
+- duplicate policy logic
+- serialize API output
+- hide Eloquent behind a fake repository abstraction
+
+That restraint is important. Overbuilt service layers become just as messy as
+fat controllers.
+
+### Testing implications of the service layer
+
+This architecture makes testing cleaner in at least three ways:
+
+1. **Feature tests** can hit controller endpoints and indirectly verify the
+   whole request -> policy -> service -> model path.
+2. **Queue fakes** can assert that `GenerateSummaryJob` was dispatched without
+   running it.
+3. **Conflict scenarios** can be tested by manipulating timestamps and calling
+   update flows with stale `updated_at` values.
+
+That is another sign the layer boundaries are doing useful work.
+
+### Framework-native vs custom in this section
+
+#### Laravel-native pieces used by the service
+
+- `dispatch(...)`
+- Eloquent mutation APIs (`create`, `save`, `load`)
+- `abort(...)`
+- queue/job integration
+
+#### Custom project decisions
+
+- using `updated_at` as optimistic-lock token
+- resetting summary only when description changes
+- setting `status=open` and `summary_status=pending` in create workflow
+- explicitly loading `category` and `user` before returning
+
+Again, Laravel gives the tools; the project chooses the workflow.
+
+### Service layer reading heuristic
+
+When you open a service class in Laravel, ask:
+
+1. What use case does this service own?
+2. Which invariants here are request-time/business-workflow concerns?
+3. Which side effects are triggered here?
+4. Which responsibilities are intentionally delegated to models, requests,
+   policies, or jobs?
+
+That habit will help you avoid both under- and over-abstracting your own code.
+
 ### Reading exercise for §6
 
 1. `IssueService::update()` iterates over a `$fillable` array of field names
@@ -1938,6 +2211,14 @@ second ensures the update always produces a strictly later timestamp.
 3. In `create()`, the service calls `$issue->load(['category', 'user'])` at the
    end. What SQL queries does this trigger? How many queries total does
    `IssueService::create()` execute?
+4. Explain why summary regeneration belongs in `IssueService::update()` instead
+   of in `IssueController::update()` or `Issue::booted()`.
+5. Optional: write a short comparison note for yourself titled:
+
+   - "What would this service look like in NestJS?"
+
+   Include: controller delegation, ORM usage, conflict handling, and background
+   job dispatch.
 
 ---
 
