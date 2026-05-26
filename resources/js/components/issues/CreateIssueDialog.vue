@@ -37,8 +37,16 @@ import { useCategories } from '@/composables/useCategories'
 import { useTriageSuggest } from '@/composables/useTriageSuggest'
 import type { Issue, Priority } from '@/types'
 
+interface Prefill {
+  title?: string
+  description?: string
+  priority?: Priority
+  category_id?: number | null
+}
+
 const props = defineProps<{
   open: boolean
+  prefill?: Prefill
 }>()
 
 const emit = defineEmits<{
@@ -70,6 +78,13 @@ onMounted(() => {
 watch(() => props.open, (isOpen) => {
   if (isOpen) {
     fetchCategories()
+    // Apply prefill values if provided
+    if (props.prefill) {
+      if (props.prefill.title) form.value.title = props.prefill.title
+      if (props.prefill.description) form.value.description = props.prefill.description
+      if (props.prefill.priority) form.value.priority = props.prefill.priority
+      if (props.prefill.category_id) form.value.category_id = props.prefill.category_id
+    }
   }
 })
 

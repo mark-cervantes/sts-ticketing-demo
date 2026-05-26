@@ -6,10 +6,14 @@ import {
   AlertTriangleIcon,
   TagIcon,
   BarChart3Icon,
+  UserIcon,
   XIcon,
+  ArchiveIcon,
 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -18,8 +22,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useIssueFilters } from '@/composables/useIssueFilters'
-import type { IssueStatus, IssuePriority } from '@/types/issue'
-import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
+import { useStatuses } from '@/composables/useStatuses'
+import type { IssuePriority } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 
 const emit = defineEmits<{
   (e: 'create-issue'): void
@@ -27,24 +32,30 @@ const emit = defineEmits<{
 
 const {
   filters,
+  myTickets,
+  showArchived,
   categories,
   categoriesLoading,
   fetchCategories,
   toggleStatus,
   togglePriority,
   setCategory,
+  toggleMyTickets,
+  toggleShowArchived,
   clearFilters,
 } = useIssueFilters()
 
-const allStatuses: IssueStatus[] = ['open', 'in_progress', 'resolved']
+const { statuses, loading: statusesLoading, fetchStatuses } = useStatuses()
+
 const allPriorities: IssuePriority[] = ['critical', 'high', 'medium', 'low']
 
 onMounted(() => {
   void fetchCategories()
+  void fetchStatuses()
 })
 
-function isStatusActive(status: IssueStatus): boolean {
-  return filters.value.statuses.includes(status)
+function isStatusActive(statusId: number): boolean {
+  return filters.value.statuses.includes(statusId)
 }
 
 function isPriorityActive(priority: IssuePriority): boolean {
@@ -58,7 +69,9 @@ function handleCategoryChange(value: string | number | bigint | Record<string, u
 
 const hasActiveFilters = computed(() => {
   return (
-    filters.value.statuses.length < 3 ||
+    myTickets.value === true ||
+    showArchived.value === true ||
+    filters.value.statuses.length < statuses.value.length ||
     filters.value.priorities.length > 0 ||
     filters.value.category !== null
   )
@@ -77,22 +90,71 @@ const hasActiveFilters = computed(() => {
 
     <!-- Filter sections -->
     <nav class="flex-1 space-y-6 overflow-y-auto px-4 pb-4">
+
+      <!-- MY TICKETS — top of sidebar, above all other filters -->
+      <div>
+        <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <UserIcon class="size-3.5" />
+          My Tickets
+        </h3>
+        <div class="flex items-center justify-between rounded-lg px-1 py-0.5">
+          <span class="text-sm text-foreground">Show only mine</span>
+          <Switch
+            :checked="myTickets"
+            aria-label="Show only my tickets"
+            @update:checked="toggleMyTickets"
+          />
+        </div>
+        <p v-if="myTickets" class="mt-1.5 text-[11px] text-muted-foreground">
+          Filtering to your tickets only
+        </p>
+      </div>
+
+      <!-- ARCHIVED — server-side filter, re-fetches columns when toggled -->
+      <div>
+        <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <ArchiveIcon class="size-3.5" />
+          Archived
+        </h3>
+        <div class="flex items-center justify-between rounded-lg px-1 py-0.5">
+          <Label class="text-sm font-normal text-foreground">Show archived</Label>
+          <Switch
+            :checked="showArchived"
+            aria-label="Show archived tickets"
+            @update:checked="toggleShowArchived"
+          />
+        </div>
+        <p v-if="showArchived" class="mt-1.5 text-[11px] text-muted-foreground">
+          Showing archived tickets on the board
+        </p>
+      </div>
+
       <!-- Status filter — toggles hide/show entire columns -->
       <div>
         <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <CircleDotIcon class="size-3.5" />
           Status
         </h3>
-        <div class="flex flex-wrap gap-1.5">
+        <div v-if="statusesLoading" class="flex flex-wrap gap-1.5">
+          <Skeleton class="h-7 w-16 rounded-md" />
+          <Skeleton class="h-7 w-20 rounded-md" />
+          <Skeleton class="h-7 w-16 rounded-md" />
+        </div>
+        <div v-else class="flex flex-wrap gap-1.5">
           <Button
-            v-for="status in allStatuses"
-            :key="status"
+            v-for="status in statuses"
+            :key="status.id"
             size="sm"
-            :variant="isStatusActive(status) ? 'default' : 'outline'"
+            :variant="isStatusActive(status.id) ? 'default' : 'outline'"
             class="h-7 gap-1.5 text-xs"
-            @click="toggleStatus(status)"
+            @click="toggleStatus(status.id)"
           >
-            {{ STATUS_CONFIG[status].label }}
+            <!-- Color dot -->
+            <span
+              class="size-2 rounded-full shrink-0"
+              :style="{ backgroundColor: status.color }"
+            />
+            {{ status.name }}
           </Button>
         </div>
       </div>

@@ -28,7 +28,17 @@ class IssueResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'priority' => $this->priority->value,
-            'status' => $this->status->value,
+            // Backward compat: emit slug as 'status' string (frontend currently reads this)
+            'status' => $this->status->slug,
+            'status_id' => $this->status_id,
+            'status_obj' => [
+                'id' => $this->status->id,
+                'name' => $this->status->name,
+                'slug' => $this->status->slug,
+                'color' => $this->status->color,
+                'sort_order' => $this->status->sort_order,
+                'is_default' => $this->status->is_default,
+            ],
             'visibility' => $this->visibility->value,
             'summary_status' => $this->summary_status->value,
             'summary' => $this->summary,
@@ -36,6 +46,7 @@ class IssueResource extends JsonResource
             'suggested_next_ticket' => $this->suggested_next_ticket,
             'needs_attention' => $this->needs_attention,
             'deadline_at' => $this->deadline_at?->toIso8601String(),
+            'archived_at' => $this->archived_at?->toIso8601String(),
             'user_id' => $this->user_id,
             'category_id' => $this->category_id,
             'created_at' => $this->created_at->toIso8601String(),
@@ -75,8 +86,14 @@ class IssueResource extends JsonResource
                 ]);
             }),
 
-            // Permission gate for comment input visibility
-            'can_comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+            // Permission gates for UI affordances
+            'can' => [
+                'view' => $request->user() ? Gate::allows('view', $this->resource) : false,
+                'update' => $request->user() ? Gate::allows('update', $this->resource) : false,
+                'comment' => $request->user() ? Gate::allows('comment', $this->resource) : false,
+                'delete' => $request->user() ? Gate::allows('delete', $this->resource) : false,
+                'archive' => $request->user() ? Gate::allows('update', $this->resource) : false,
+            ],
         ];
     }
 }

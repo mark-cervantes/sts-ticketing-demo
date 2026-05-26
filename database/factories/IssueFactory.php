@@ -3,11 +3,11 @@
 namespace Database\Factories;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Enums\SummaryStatus;
 use App\Enums\Visibility;
 use App\Models\Category;
 use App\Models\Issue;
+use App\Models\IssueStatus;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -92,7 +92,7 @@ class IssueFactory extends Factory
             'title' => fake()->sentence(6),
             'description' => fake()->paragraph(),
             'priority' => Priority::Low,
-            'status' => Status::Open,
+            'status_id' => fn () => IssueStatus::where('slug', 'open')->value('id'),
             'visibility' => Visibility::Private,
             'summary' => null,
             'suggested_next_action' => null,
@@ -106,30 +106,30 @@ class IssueFactory extends Factory
     // Status states
     // -------------------------------------------------------------------------
 
-    /** Generic status setter. */
-    public function status(Status $status): static
+    /** Generic status setter by slug. */
+    public function statusBySlug(string $slug): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => $status,
+            'status_id' => IssueStatus::where('slug', $slug)->value('id'),
         ]);
     }
 
     /** Open status shortcut. */
     public function open(): static
     {
-        return $this->status(Status::Open);
+        return $this->statusBySlug('open');
     }
 
     /** In-progress status shortcut. */
     public function inProgress(): static
     {
-        return $this->status(Status::InProgress);
+        return $this->statusBySlug('in_progress');
     }
 
     /** Resolved status shortcut. */
     public function resolved(): static
     {
-        return $this->status(Status::Resolved);
+        return $this->statusBySlug('resolved');
     }
 
     // -------------------------------------------------------------------------

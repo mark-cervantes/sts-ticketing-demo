@@ -20,12 +20,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $base_url
  * @property string|null $api_key (encrypted)
  * @property string|null $model
+ * @property string|null $system_prompt
+ * @property string|null $user_prompt
  * @property string|null $active_preset e.g. 'openrouter', 'ollama-cloud', null for custom
  * @property int|null $updated_by
  * @property Carbon $created_at
  * @property Carbon $updated_at
+ * @property string|null $chat_system_prompt
  * @property-read string|null $effective_base_url
  * @property-read string $effective_driver
+ * @property-read string $effective_system_prompt
+ * @property-read string $effective_user_prompt
+ * @property-read string $effective_chat_system_prompt
  * @property-read User|null $updatedBy
  */
 class AiSetting extends Model
@@ -38,6 +44,9 @@ class AiSetting extends Model
         'base_url',
         'api_key',
         'model',
+        'system_prompt',
+        'user_prompt',
+        'chat_system_prompt',
         'active_preset',
         'updated_by',
     ];
@@ -112,6 +121,33 @@ class AiSetting extends Model
     public function getEffectiveDriverAttribute(): string
     {
         return $this->provider === 'rules' ? 'rules' : 'llm';
+    }
+
+    /**
+     * Return the system prompt to use — DB value when set, otherwise falls
+     * back to the config/prompts/summary.php default.
+     */
+    public function getEffectiveSystemPromptAttribute(): string
+    {
+        return $this->system_prompt ?? config('prompts.summary.system');
+    }
+
+    /**
+     * Return the user prompt template to use — DB value when set, otherwise
+     * falls back to the config/prompts/summary.php default.
+     */
+    public function getEffectiveUserPromptAttribute(): string
+    {
+        return $this->user_prompt ?? config('prompts.summary.user');
+    }
+
+    /**
+     * Return the chat system prompt to use — DB value when set, otherwise
+     * falls back to a sensible default for ticket-based chat assistance.
+     */
+    public function getEffectiveChatSystemPromptAttribute(): string
+    {
+        return $this->chat_system_prompt ?? 'You are a helpful assistant discussing a support ticket. Answer based on the issue details and conversation provided. Be concise and specific. Use bullet points for clarity.';
     }
 
     // -------------------------------------------------------------------------

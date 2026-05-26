@@ -3,6 +3,15 @@
 namespace App\Providers;
 
 use App\Models\AiSetting;
+use App\Models\Comment;
+use App\Models\Issue;
+use App\Models\User;
+use App\Observers\CommentObserver;
+use App\Services\Ai\Tools\ChatToolRegistry;
+use App\Services\Ai\Tools\CreateTicketTool;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -14,7 +23,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(ChatToolRegistry::class, function () {
+            return tap(new ChatToolRegistry, function (ChatToolRegistry $registry): void {
+                $registry->register(new CreateTicketTool);
+            });
+        });
     }
 
     /**
@@ -23,6 +36,20 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        Comment::observe(CommentObserver::class);
+
+        // Rate limiter for AI chat: 10 messages per user per issue per hour.
+        // Applied to both stateless /chat and /conversations/{id}/continue endpoints.
+        RateLimiter::for('chat', function (Request $request) {
+            /** @var User|null $user */
+            $user = $request->user();
+            $issueId = $request->route('issue') instanceof Issue
+                ? $request->route('issue')->id
+                : (int) $request->route('issue');
+
+            return Limit::perHour(10)->by('chat:'.($user?->id ?? 'guest').':'.$issueId);
+        });
 
         // Force HTTPS in production — TLS terminates at the reverse proxy (Traefik/Caddy),
         // so Laravel sees plain HTTP and generates http:// URLs without this.

@@ -1,15 +1,44 @@
 import { ref } from 'vue'
-import type { IssueFilters, IssueStatus, IssuePriority, Category } from '@/types/issue'
+import type { IssueFilters, IssuePriority, Category } from '@/types/issue'
+import { useStatuses } from '@/composables/useStatuses'
 
 /**
  * Module-scoped shared filter state.
  * Follows useDarkMode pattern — single instance across all consumers.
  */
 const filters = ref<IssueFilters>({
-  statuses: ['open', 'in_progress', 'resolved'],
+  // Start empty (meaning "all") — hydrated from useStatuses after first fetch.
+  statuses: [],
   priorities: [],
   category: null,
 })
+
+/**
+ * "My Tickets" toggle — client-side only filter.
+ * Module-scoped singleton so it survives component re-mounts.
+ * Persisted in localStorage as 'kanban-filter-my-tickets'.
+ */
+const myTickets = ref<boolean>((() => {
+  try {
+    return localStorage.getItem('kanban-filter-my-tickets') === 'true'
+  } catch {
+    return false
+  }
+})())
+
+/**
+ * "Show Archived" toggle — triggers server re-fetch (adds ?include_archived=1).
+ * Module-scoped singleton so it survives component re-mounts.
+ * Persisted in localStorage as 'kanban-filter-show-archived'.
+ * NOTE: Unlike myTickets (client-side only), this MUST trigger loadInitial() in useKanbanBoard.
+ */
+const showArchived = ref<boolean>((() => {
+  try {
+    return localStorage.getItem('kanban-filter-show-archived') === 'true'
+  } catch {
+    return false
+  }
+})())
 
 const categories = ref<Category[]>([])
 const categoriesLoading = ref(false)
@@ -31,17 +60,27 @@ async function fetchCategories(): Promise<void> {
       credentials: 'same-origin',
     })
     if (response.ok) {
-      categories.value = await response.json() as Category[]
+      categories.value = (await response.json()) as Category[]
     }
   } finally {
     categoriesLoading.value = false
   }
 }
 
-function toggleStatus(status: IssueStatus): void {
-  const idx = filters.value.statuses.indexOf(status)
+/**
+ * Ensure the statuses filter is hydrated with all status IDs.
+ * Call after useStatuses has fetched the list.
+ */
+function initStatusesFilter(allStatusIds: number[]): void {
+  if (filters.value.statuses.length === 0 && allStatusIds.length > 0) {
+    filters.value.statuses = [...allStatusIds]
+  }
+}
+
+function toggleStatus(statusId: number): void {
+  const idx = filters.value.statuses.indexOf(statusId)
   if (idx === -1) {
-    filters.value.statuses.push(status)
+    filters.value.statuses.push(statusId)
   } else {
     // Don't allow deselecting ALL statuses
     if (filters.value.statuses.length > 1) {
@@ -63,23 +102,70 @@ function setCategory(slug: string | null): void {
   filters.value.category = slug
 }
 
+/**
+ * Toggle "My Tickets" client-side filter.
+ * Persists state to localStorage immediately.
+ */
+function toggleMyTickets(value?: boolean): void {
+  myTickets.value = value !== undefined ? value : !myTickets.value
+  try {
+    localStorage.setItem('kanban-filter-my-tickets', myTickets.value ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Toggle "Show Archived" server-side filter.
+ * Persists state to localStorage immediately.
+ * Adding to useKanbanBoard watch() is what triggers the actual re-fetch.
+ */
+function toggleShowArchived(value?: boolean): void {
+  showArchived.value = value !== undefined ? value : !showArchived.value
+  try {
+    localStorage.setItem('kanban-filter-show-archived', showArchived.value ? 'true' : 'false')
+  } catch {
+    // ignore
+  }
+}
+
 function clearFilters(): void {
+  const { statuses: allStatuses } = useStatuses()
   filters.value = {
-    statuses: ['open', 'in_progress', 'resolved'],
+    statuses: allStatuses.value.map((s) => s.id),
     priorities: [],
     category: null,
+  }
+  // Also reset "My Tickets"
+  myTickets.value = false
+  try {
+    localStorage.setItem('kanban-filter-my-tickets', 'false')
+  } catch {
+    // ignore
+  }
+  // Also reset "Show Archived"
+  showArchived.value = false
+  try {
+    localStorage.setItem('kanban-filter-show-archived', 'false')
+  } catch {
+    // ignore
   }
 }
 
 export function useIssueFilters() {
   return {
     filters,
+    myTickets,
+    showArchived,
     categories,
     categoriesLoading,
     fetchCategories,
+    initStatusesFilter,
     toggleStatus,
     togglePriority,
     setCategory,
+    toggleMyTickets,
+    toggleShowArchived,
     clearFilters,
   }
 }

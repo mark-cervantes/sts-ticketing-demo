@@ -295,7 +295,31 @@ Why this matters:
 
 - The frontend gets a stable JSON contract.
 - The list view and detail view can expose slightly different fields without changing the model.
-- Permissions such as `can_comment` can be exposed intentionally rather than inferred by the client.
+- Permissions are exposed as a structured `can` map rather than inferred by the client.
+
+#### The `can` permissions map
+
+`IssueResource` returns a `can` key containing a map of permission booleans:
+
+```php
+'can' => [
+    'view'    => $user->can('view', $issue),
+    'update'  => $user->can('update', $issue),
+    'comment' => $user->can('comment', $issue),
+    'delete'  => $user->can('delete', $issue),
+],
+```
+
+This replaced individual top-level booleans like `can_comment` and `can_update`.
+
+Why this is better:
+
+- Single source of truth for all permissions on each issue.
+- Extensible: adding a new permission is one line, not a new top-level key.
+- Structured: the frontend can type it as `Record<Permission, boolean>` and iterate over it.
+- Mirrors the `Permission` enum on the backend.
+
+**NestJS comparison:** In NestJS you would typically decorate a DTO with a permissions object assembled inside an interceptor or serializer. The Laravel equivalent is computing it inside the Resource class, which is the response transformer layer. Both approaches keep permission computation out of the controller and close to serialization.
 
 ---
 
@@ -366,8 +390,10 @@ Drag and drop moves the card immediately on the client, then PATCHes the server.
 If the request fails:
 
 - the move is reverted
-- the user gets a toast
-- concurrency conflicts get a specific message
+- the user gets a contextual toast with title and description (which issue, what went wrong)
+- concurrency conflicts show a 409-specific message
+- validation failures show a 422-specific message
+- permission denials show a 403-specific message linking the user to request access
 
 This is implemented in `resources/js/composables/useKanbanBoard.ts`.
 
@@ -375,6 +401,55 @@ Why it is a strong interview point:
 
 - It shows you thought about perceived performance.
 - It shows you thought about rollback on failure, not just happy-path animation.
+- It shows you differentiated error types rather than showing a generic "something went wrong."
+
+### Drag authorization is defense-in-depth
+
+Not all users can move all issues. The Kanban board enforces drag authorization at multiple layers:
+
+1. **UI layer:** Cards the user cannot update show a lock icon and are visually muted (0.85 opacity). SortableJS `:filter=".no-drag"` prevents the drag gesture from starting — no server request is made at all.
+2. **API layer:** If a drag request somehow reaches the backend, the `IssuePolicy` rejects it with 403.
+3. **Feedback layer:** Attempting to drag a locked card shows an info toast: "View-only issue — ask the owner to share it with you." A 403 from the API also shows a permission-denied toast.
+
+This is a textbook defense-in-depth pattern: prevent at the UI, catch at the API, inform the user at both layers.
+
+**NestJS comparison:** In NestJS you would use `@UseGuards(AbilityGuard)` on the endpoint and conditionally disable the drag handle on the frontend based on a permissions DTO. The layers are the same — the difference is that Laravel uses policy method authorization while NestJS uses CASL or a similar ability-check library. The important point is that both the frontend and backend enforce independently.
+
+Why the lock icon is positioned absolutely in the top-right corner of the card:
+
+- It costs zero vertical space in the card layout.
+- It is visible without disrupting the card's content hierarchy.
+- Muting the entire card at 0.85 opacity provides a secondary signal beyond just the icon.
+
+### Toast UX
+
+Toasts use `vue-sonner` with `vue-sonner/style.css` explicitly imported.
+
+Key details:
+
+- Position: top-right.
+- Rich colors: red for errors, green for success.
+- Error toasts use a title plus description pattern for context (e.g., title: "Move failed", description: "Issue #42 — another user updated this issue").
+- This was a real bug fix: the CSS import was missing so `position` and `rich-colors` props had no effect until the stylesheet was added.
+
+**NestJS comparison:** NestJS frontends typically use `react-hot-toast` or `notistack`. The pattern is the same: a global toast provider with severity-aware styling. The lesson here is that component libraries that require explicit CSS imports can silently degrade — props like `position` and `rich-colors` appear to work (no errors), but the visual behavior is simply absent.
+
+### Follow-up ticket UX
+
+When AI suggests a follow-up ticket, clicking the suggestion now opens the `CreateIssueDialog` pre-filled rather than silently auto-creating the issue.
+
+How it works:
+
+- `CreateIssueDialog` accepts an optional `prefill` prop with `title`, `description`, `priority`, and `category_id`.
+- The dialog opens with those fields pre-populated, but the user has full control to review and edit before submitting.
+
+Why this is better than auto-create:
+
+- The user stays in control — they can adjust priority, category, and wording.
+- It avoids creating garbage issues from imperfect AI suggestions.
+- It feels assistive rather than autonomous.
+
+**NestJS comparison:** This is equivalent to navigating to a create form with query params or passing initial values via a React context/Zustand store. The principle is the same: AI assists, but the user confirms.
 
 ### Detail slide-over is also URL-aware
 
@@ -503,14 +578,43 @@ That means:
 
 Current code behavior is:
 
-1. `SummaryManager` uses config to choose a default driver.
-2. If the configured driver is `llm` but no API key exists, it silently chooses `rules`.
+1. `SummaryManager` uses config to choose a default driver. The default is now `llm` (changed from `rules`).
+2. If the configured driver is `llm` but no API key exists, it silently falls back to `rules`.
 3. `GenerateSummaryJob` tries the primary driver.
 4. If the primary driver fails and retries are exhausted, the job falls back to `rules`.
 
 Interview-safe phrasing:
 
-"The app uses a configurable OpenAI-compatible LLM endpoint and a deterministic rules fallback. Some planning docs describe Ollama Cloud and OpenRouter as provider options. In the current code, the provider is a single configurable endpoint, so OpenRouter can still be used by configuration, but it is not hard-coded as a second driver."
+"The default summary driver is `llm`, which uses a configurable OpenAI-compatible endpoint. If no API key is configured, it auto-falls back to the deterministic `rules` driver so the app always works locally. The LLM driver supports any OpenAI-compatible API including Ollama Cloud and OpenRouter."
+
+### What the LLM prompt includes
+
+The summary prompt is not just title and description — it includes the full comment and conversation history for the issue. This matters because:
+
+- Issues evolve through discussion. A summary based only on the original description misses critical context.
+- Comments often contain the real diagnosis, workaround, or decision.
+- Re-triggering summary after a description edit now has richer context to work with.
+
+**NestJS comparison:** This is equivalent to building a prompt in a NestJS service by aggregating data from multiple repositories (issue + comments) before calling the LLM SDK. The key principle is the same: assemble context before calling the model, not just the primary entity.
+
+### LLM response parsing: code-fence stripping
+
+Some LLM models wrap their JSON response in markdown code fences like ` ```json ... ``` `. The `LlmDriver` now strips these fences before JSON parsing.
+
+Why this matters:
+
+- Different models have different output formatting habits.
+- Without stripping, `json_decode` fails on otherwise valid JSON.
+- This is a robustness pattern: normalize model output before parsing, because you cannot control the model's formatting behavior.
+
+### Model suggestions and Ollama Cloud
+
+The system includes a model suggestions endpoint that helps users browse available models.
+
+Key details:
+
+- The endpoint supports a `?preset=` query parameter for pre-save browsing — the user can preview which models are available for a given provider before committing a configuration change.
+- Ollama Cloud models are fetched via the `/api/tags` endpoint and mapped to an OpenRouter-compatible shape, so the frontend model picker works uniformly regardless of provider.
 
 ### Why not call the LLM directly from the controller
 
@@ -601,6 +705,9 @@ Horizon gives operational visibility into those jobs.
 | Observer-like Model Events | `Issue::booted()` and `Category::booted()` | Computes derived values and generates slugs automatically |
 | Command Pattern | `RecalculateAttentionCommand` | Encapsulates scheduled recomputation logic |
 | Optimistic UI | `useKanbanBoard.ts` | Better perceived responsiveness on drag/drop |
+| Defense-in-Depth Authorization | Kanban drag: UI filter → API policy → user toast | Prevents, catches, and informs at every layer |
+| Permissions Map | `IssueResource` `can` key | Structured, extensible permission contract |
+| Prefill / Assist Pattern | `CreateIssueDialog` `prefill` prop | AI suggests, user confirms — assistive, not autonomous |
 | Composable State Pattern | frontend composables | Reusable UI state and side-effect management |
 
 ### The most impressive pattern to talk about
@@ -757,6 +864,22 @@ The summary subsystem has a deterministic rules-based fallback driver. If the co
 
 Because the project has a visual gate: `make verify-visual`. That runs `vue-tsc`, checks real pages over HTTP, and executes a Playwright smoke test that fails on console errors or uncaught page errors.
 
+### How do you handle permissions in the API response?
+
+Each issue resource returns a `can` map — an object with `view`, `update`, `comment`, and `delete` booleans. This is computed inside `IssueResource` by calling the policy for each permission. The frontend uses this map directly to decide what to render, enable, or disable. It replaced individual `can_comment` / `can_update` booleans because a single structured map is more extensible and easier to type.
+
+### How does the Kanban board prevent unauthorized drags?
+
+Defense-in-depth across three layers. The UI adds a `no-drag` CSS class to cards the user cannot update, and SortableJS's `:filter` option prevents the drag gesture from starting. If a request somehow reaches the backend, the policy returns 403. Both layers show specific feedback toasts so the user knows why and what to do about it.
+
+### Why does the AI summary include comments, not just the description?
+
+Because issues evolve through discussion. The original description often does not reflect the current understanding — comments contain diagnosis, workarounds, and decisions. Including the full conversation history gives the LLM much better context for generating useful summaries and suggested next actions.
+
+### Why do follow-up ticket suggestions open a dialog instead of auto-creating?
+
+Because AI suggestions are not always correct. Opening a pre-filled dialog lets the user review, edit, and confirm before the issue is created. This is the assistive pattern: the AI does the drafting work, but the user makes the final call. Auto-creating would produce garbage issues from imperfect suggestions.
+
 ### What would you improve next with more time?
 
 Good answers:
@@ -766,6 +889,8 @@ Good answers:
 - tighten the production deployment story
 - add richer browser coverage around modal and drag/drop workflows
 - consider extracting a dedicated frontend store if the app grows beyond one board surface
+- expand the model suggestions UI to show model capabilities and context window sizes
+- add batch operations on the Kanban board (multi-select, bulk status change)
 
 ---
 
@@ -793,9 +918,13 @@ Use:
 4. Create a new issue and explain that summary generation is async.
 5. Mention the queue worker and Horizon for visibility.
 6. Drag a card between columns and explain optimistic UI plus optimistic locking.
-7. Share an issue with `alice@example.com` and explain the permission ladder.
-8. Mention that live summary updates arrive via SSE, with polling fallback if needed.
-9. Close by showing `make test` and `make verify-visual` as the quality gates.
+7. Point out a card with the lock icon — explain that it belongs to another user, the drag is disabled at the UI layer, and the API also enforces it. This is defense-in-depth.
+8. Share an issue with `alice@example.com` and explain the permission ladder.
+9. Show how the `can` map drives what the frontend enables or disables — one structured permissions object per issue.
+10. If a summary has a follow-up suggestion, click it and show the pre-filled create dialog.
+11. Mention that live summary updates arrive via SSE, with polling fallback if needed.
+12. Point out the toast styling — top-right, rich colors, contextual error messages.
+13. Close by showing `make test` and `make verify-visual` as the quality gates.
 
 ### If asked to demo the technical seams directly
 
@@ -819,7 +948,7 @@ This section is here so you do not accidentally defend an outdated claim.
 - Testing framework in the current repo: `PHPUnit`, not Pest.
 - Optimistic locking implementation: `updated_at`, not `lock_version`.
 - Scheduler cadence in code: every `15` minutes via `routes/console.php`.
-- Current AI implementation: one configurable OpenAI-compatible LLM driver plus `rules` fallback, not a hard-coded Ollama -> OpenRouter -> rules chain.
+- Current AI implementation: default driver is `llm` (OpenAI-compatible endpoint) with auto-fallback to `rules` when no API key is configured. Not a hard-coded Ollama -> OpenRouter -> rules chain. The LLM prompt includes the full comment history, not just title and description.
 - PHP version story: project docs often say PHP `8.4`, `composer.json` currently requires `^8.3`, and local development currently runs in the Sail `8.5` runtime. The safe statement is: modern PHP 8.x, containerized locally in Sail.
 - Database story: the actual local workflow uses PostgreSQL through Sail, even though `.env.example` still shows Laravel's default SQLite starter values.
 

@@ -10,6 +10,7 @@ import {
   MessageCircleIcon,
   CalendarIcon,
   SparklesIcon,
+  ArchiveIcon,
 } from '@lucide/vue'
 import type { PageProps } from '@/types'
 
@@ -90,14 +91,24 @@ function handlePointerUp(evt: PointerEvent): void {
 <template>
   <div
     class="group cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing active:shadow-lg"
+    :class="issue.archived_at ? 'opacity-50 cursor-default' : ''"
     @pointerdown="handlePointerDown"
     @pointerup="handlePointerUp"
   >
-    <!-- Top row: title + needs_attention -->
+    <!-- Top row: title + archived badge + needs_attention -->
     <div class="flex items-start gap-2">
       <h4 class="flex-1 text-sm font-medium leading-snug text-card-foreground">
         {{ issue.title }}
       </h4>
+      <!-- Archived badge — shown when archived_at is set -->
+      <span
+        v-if="issue.archived_at"
+        class="inline-flex shrink-0 items-center gap-0.5 rounded-sm bg-muted px-1 py-0.5 text-[10px] font-medium text-muted-foreground"
+        aria-label="Archived"
+      >
+        <ArchiveIcon class="size-2.5" />
+        Archived
+      </span>
       <FlameIcon
         v-if="issue.needs_attention"
         class="size-4 shrink-0 text-orange-500 dark:text-orange-400"

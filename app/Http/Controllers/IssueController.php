@@ -47,9 +47,14 @@ class IssueController extends Controller
         $query = Issue::query()
             ->select('issues.*')
             ->selectRaw("CASE priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END AS priority_order")
-            ->with(['category', 'user'])
+            ->with(['category', 'user', 'status'])
             ->withCount('comments')
             ->accessibleBy($request->user());
+
+        // Exclude archived issues by default; include them when explicitly requested (SPEC §4.2)
+        if (! $request->boolean('include_archived')) {
+            $query->active();
+        }
 
         // Filters — via named model scopes (G5); each scope silently ignores invalid values
         $query->filterByStatus($request->query('status'))
@@ -115,7 +120,7 @@ class IssueController extends Controller
     {
         $this->authorize('view', $issue);
 
-        $issue->load(['comments.user', 'comments.reactions.user', 'category', 'user']);
+        $issue->load(['comments.user', 'comments.reactions.user', 'category', 'user', 'status']);
 
         return new IssueResource($issue);
     }

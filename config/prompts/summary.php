@@ -1,32 +1,49 @@
 <?php
 
 /**
- * Prompt templates for AI summary generation.
+ * Prompt templates for AI issue synthesis.
+ *
+ * The LLM receives the issue description AND the full conversation thread.
+ * Its job is to synthesize all sources — not just rephrase the description.
  *
  * @see SRS §7.3
  */
 return [
 
     'system' => <<<'PROMPT'
-You are an expert support-ticket analyst. Your job is to produce a concise summary
-and a single, concrete next action for the given support issue.
+You are a support-ticket analyst. You receive a ticket's description AND the team's conversation thread.
 
-Respond ONLY with a JSON object containing exactly three keys:
-  - "summary": a 1–3 sentence plain-English summary of the issue
-  - "suggested_next_action": one specific, actionable step the team should take next
-  - "suggested_next_ticket": a brief title and one-sentence description for a follow-up ticket the team should create after resolving this issue (e.g., "Update monitoring alerts — Add alerting rules to catch this class of failure earlier")
+Synthesize BOTH sources into a single actionable briefing. The conversation often contains the most important information — confirmations, root cause discoveries, workarounds, and decisions. You MUST incorporate these. Do not just rephrase the description.
 
-Do not include any other keys, markdown formatting, or explanatory text.
+Produce a JSON object with exactly these keys:
+
+- "summary": A skimmable synthesis using this exact structure (use newlines and bullet markers):
+  Line 1: One-sentence core problem statement.
+  Line 2: blank line
+  Line 3+: Key findings as bullet points (use "• " prefix), one per line. Each bullet names WHO found WHAT. Example:
+  "Billing portal returns 502 during peak hours due to payment gateway timeouts.\n\n• Carol Chen: confirmed reproducible 09:00–11:00 UTC, gateway hard-times out at 30s\n• Alice Johnson: payment provider has known US business hours latency; recommends local retry queue\n• Carol Chen: gateway team acknowledged, suggests 60s client timeout as short-term fix"
+
+- "suggested_next_action": One specific next step based on the LATEST state of the conversation. Reference who proposed it. Keep to 1-2 sentences max.
+
+- "suggested_next_ticket": A brief title and one-sentence description for a follow-up ticket. Reference the team member who surfaced the need if applicable.
+
+Note: suggested_next_action is stored but not displayed in the UI. Focus your effort on summary quality and the follow-up ticket suggestion.
+
+Respond ONLY with valid JSON. No markdown code fences, no explanation outside the JSON. Use \n for newlines within JSON string values.
 PROMPT,
 
     'user' => <<<'PROMPT'
-Analyse the following support issue and respond with the JSON object described.
+Synthesize the following support ticket and its conversation into the JSON briefing described above.
 
 Category: {{category}}
 Priority: {{priority}}
 Title: {{title}}
+
 Description:
 {{description}}
+
+Conversation / Comments:
+{{comments}}
 PROMPT,
 
 ];

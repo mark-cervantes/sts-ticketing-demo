@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, computed, nextTick } from 'vue'
-import type { Issue, IssueStatus, IssuePriority, IssueVisibility } from '@/types/issue'
-import { STATUS_CONFIG, PRIORITY_CONFIG } from '@/types/issue'
+import type { Issue, IssuePriority, IssueVisibility } from '@/types/issue'
+import { PRIORITY_CONFIG } from '@/types/issue'
 import { useIssueDetail } from '@/composables/useIssueDetail'
 import { useCategories } from '@/composables/useCategories'
+import { useStatuses } from '@/composables/useStatuses'
 import { useSummaryStream } from '@/composables/useSummaryStream'
 import {
   Sheet,
@@ -43,7 +44,10 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import CommentThread from '@/components/issues/CommentThread.vue'
 import ShareSection from '@/components/issues/ShareSection.vue'
+import IssueChatPanel from '@/components/issues/IssueChatPanel.vue'
 import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
   FlameIcon,
   MoreHorizontalIcon,
   Trash2Icon,
@@ -51,11 +55,12 @@ import {
   SparklesIcon,
   CalendarIcon,
   AlertCircleIcon,
-  ArrowRightIcon,
   RefreshCwIcon,
   TicketPlusIcon,
 } from '@lucide/vue'
-import { apiPost } from '@/composables/useApiFetch'
+import CreateIssueDialog from '@/components/issues/CreateIssueDialog.vue'
+import { apiPatch, apiPost } from '@/composables/useApiFetch'
+import { useKanbanBoard } from '@/composables/useKanbanBoard'
 import { toast } from 'vue-sonner'
 import { Calendar } from '@/components/ui/calendar'
 import {
@@ -65,6 +70,8 @@ import {
 } from '@/components/ui/popover'
 import { getLocalTimeZone, today, type DateValue, parseDate } from '@internationalized/date'
 import { toDate } from 'reka-ui/date'
+import { usePage } from '@inertiajs/vue3'
+import type { PageProps } from '@/types'
 
 interface IssueDetailSheetProps {
   open: boolean
@@ -94,6 +101,7 @@ const {
 } = useIssueDetail()
 
 const { categories, fetchCategories } = useCategories()
+const { statuses, fetchStatuses } = useStatuses()
 
 const deleteDialogOpen = ref(false)
 const conflictDialogOpen = ref(false)
@@ -104,6 +112,11 @@ const localTitle = ref('')
 const localDescription = ref('')
 
 const todayDate = today(getLocalTimeZone())
+
+const page = usePage<PageProps>()
+const isOwnIssue = computed(
+  () => issue.value?.user?.id === page.props.auth.user.id,
+)
 
 // Reactive refs for SSE composable inputs
 const streamIssueId = computed(() => (props.open ? props.issueId : null))
@@ -131,12 +144,7 @@ const priorityOptions: { value: IssuePriority; label: string }[] = [
   { value: 'low', label: 'Low' },
 ]
 
-// Status options for select
-const statusOptions: { value: IssueStatus; label: string }[] = [
-  { value: 'open', label: 'Open' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'resolved', label: 'Resolved' },
-]
+// Status options are sourced dynamically from useStatuses
 
 // Summary section computed state
 const summaryState = computed<'ready' | 'processing' | 'failed'>(() => {
@@ -173,7 +181,7 @@ watch(
   async ([isOpen, id]) => {
     if (isOpen && id) {
       await fetchIssue(id)
-      await fetchCategories()
+      await Promise.all([fetchCategories(), fetchStatuses()])
       setIssueQueryParam(id)
       syncLocalFields()
     } else if (!isOpen) {
@@ -255,8 +263,10 @@ function handlePriorityChange(value: unknown): void {
 }
 
 function handleStatusChange(value: unknown): void {
-  if (typeof value !== 'string') return
-  void patchIssue({ status: value })
+  // value is the status ID (passed as string from Select, we convert)
+  const id = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : null
+  if (id === null || isNaN(id)) return
+  void patchIssue({ status_id: id })
 }
 
 function handleCategoryChange(value: unknown): void {
@@ -313,6 +323,80 @@ async function handleRegenerate(): Promise<void> {
   } finally {
     regenerating.value = false
   }
+}
+
+// --- Archive / Unarchive ---
+
+const { loadInitial } = useKanbanBoard()
+const archiving = ref(false)
+const unarchiving = ref(false)
+
+async function handleArchive(): Promise<void> {
+  if (!issue.value || archiving.value) return
+  archiving.value = true
+  try {
+    const response = await apiPatch(`/api/issues/${issue.value.id}/archive`, {})
+    if (!response.ok) {
+      const body = (await response.json()) as { message?: string }
+      toast.error(body.message ?? 'Failed to archive issue.')
+      return
+    }
+    // Re-fetch issue so the detail sheet reflects updated archived_at
+    await fetchIssue(issue.value.id)
+    // Refresh the board — archived ticket disappears when showArchived is off
+    void loadInitial()
+  } catch {
+    toast.error('Network error — archive failed.')
+  } finally {
+    archiving.value = false
+  }
+}
+
+async function handleUnarchive(): Promise<void> {
+  if (!issue.value || unarchiving.value) return
+  unarchiving.value = true
+  try {
+    const response = await apiPatch(`/api/issues/${issue.value.id}/unarchive`, {})
+    if (!response.ok) {
+      const body = (await response.json()) as { message?: string }
+      toast.error(body.message ?? 'Failed to unarchive issue.')
+      return
+    }
+    // Re-fetch issue so the detail sheet reflects cleared archived_at
+    await fetchIssue(issue.value.id)
+    toast.success('Ticket restored to the board.')
+    // Refresh the board — ticket reappears
+    void loadInitial()
+  } catch {
+    toast.error('Network error — unarchive failed.')
+  } finally {
+    unarchiving.value = false
+  }
+}
+
+// --- Suggested follow-up ticket creation ---
+
+const followUpDialogOpen = ref(false)
+const followUpPrefill = ref<{ title?: string; description?: string; priority?: IssuePriority; category_id?: number | null }>({})
+
+function handleCreateFollowUp(): void {
+  if (!issue.value) return
+  const suggestedTitle = issue.value.suggested_next_ticket
+  if (!suggestedTitle) return
+
+  followUpPrefill.value = {
+    title: suggestedTitle,
+    description: `Follow-up from issue #${issue.value.id}: ${issue.value.title}`,
+    priority: issue.value.priority,
+    category_id: issue.value.category_id ?? null,
+  }
+  followUpDialogOpen.value = true
+}
+
+function handleFollowUpCreated(): void {
+  followUpDialogOpen.value = false
+  window.dispatchEvent(new Event('issue:created'))
+  toast.success('Follow-up ticket created')
 }
 </script>
 
@@ -455,7 +539,7 @@ async function handleRegenerate(): Promise<void> {
           <div class="space-y-1.5">
             <Label>Status</Label>
             <Select
-              :model-value="issue.status"
+              :model-value="String(issue.status_id)"
               :disabled="saving"
               @update:model-value="handleStatusChange"
             >
@@ -464,11 +548,11 @@ async function handleRegenerate(): Promise<void> {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem
-                  v-for="opt in statusOptions"
-                  :key="opt.value"
-                  :value="opt.value"
+                  v-for="s in statuses"
+                  :key="s.id"
+                  :value="String(s.id)"
                 >
-                  {{ opt.label }}
+                  {{ s.name }}
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -585,44 +669,30 @@ async function handleRegenerate(): Promise<void> {
           <template v-if="summaryState === 'ready'">
             <Transition name="summary-reveal">
               <div :key="issue.summary ?? 'empty'">
-                <p class="text-sm leading-relaxed text-foreground">
+                <p class="whitespace-pre-line text-sm leading-relaxed text-foreground">
                   {{ issue.summary }}
                 </p>
-                <!-- Suggested action banner -->
-                <div
-                  v-if="issue.suggested_next_action"
-                  class="mt-2 flex gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 dark:bg-primary/10"
-                >
-                  <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <ArrowRightIcon class="size-4 text-primary" />
-                  </div>
-                  <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-primary">
-                      Suggested Next Action
-                    </p>
-                    <p class="mt-0.5 text-sm text-foreground">
-                      {{ issue.suggested_next_action }}
-                    </p>
-                  </div>
-                </div>
-
                 <!-- Suggested follow-up ticket card -->
-                <div
+                <button
                   v-if="issue.suggested_next_ticket"
-                  class="mt-2 flex gap-3 rounded-lg border border-border bg-muted/50 p-3"
+                  type="button"
+                  class="mt-2 flex w-full gap-3 rounded-lg border border-border bg-muted/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title="Click to create this follow-up ticket"
+                  @click="handleCreateFollowUp"
                 >
                   <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">
                     <TicketPlusIcon class="size-4 text-muted-foreground" />
                   </div>
-                  <div>
+                  <div class="min-w-0 flex-1">
                     <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Suggested Follow-up Ticket
+                      <span class="ml-1 normal-case font-normal opacity-60">(click to create)</span>
                     </p>
                     <p class="mt-0.5 text-sm text-foreground">
                       {{ issue.suggested_next_ticket }}
                     </p>
                   </div>
-                </div>
+                </button>
               </div>
             </Transition>
           </template>
@@ -645,6 +715,12 @@ async function handleRegenerate(): Promise<void> {
           </p>
         </div>
 
+        <!-- AI Chat Panel — shown below AI summary when user has view permission -->
+        <IssueChatPanel
+          v-if="issue.can?.view"
+          :issue-id="issue.id"
+        />
+
         <!-- Sharing -->
         <ShareSection :issue="issue" />
 
@@ -652,16 +728,58 @@ async function handleRegenerate(): Promise<void> {
         <CommentThread
           :comments="issue.comments ?? []"
           :issue-id="issue.id"
-          :can-comment="issue.can_comment ?? false"
+          :can-comment="issue.can?.comment ?? false"
           :comments-count="issue.comments_count"
           :issue-status="issue.status"
         />
 
         <!-- Meta info -->
         <div class="space-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
-          <p>Created by {{ issue.user.name }}</p>
+          <p>
+            Created by {{ issue.user.name }}
+            <span
+              v-if="isOwnIssue"
+              class="ml-1 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
+            >You</span>
+          </p>
           <p>Created {{ new Date(issue.created_at).toLocaleDateString() }}</p>
           <p>Last updated {{ new Date(issue.updated_at).toLocaleDateString() }}</p>
+          <p v-if="issue.archived_at" class="flex items-center gap-1">
+            <ArchiveIcon class="size-3" />
+            Archived {{ new Date(issue.archived_at).toLocaleDateString() }}
+          </p>
+        </div>
+
+        <!-- Archive / Unarchive actions -->
+        <div
+          v-if="issue.can?.archive"
+          class="flex gap-2 border-t border-border pt-3"
+        >
+          <!-- Archive: only for resolved, not-yet-archived tickets -->
+          <Button
+            v-if="!issue.archived_at && issue.status === 'resolved'"
+            variant="outline"
+            size="sm"
+            class="gap-1.5 text-muted-foreground hover:text-foreground"
+            :disabled="archiving"
+            @click="handleArchive"
+          >
+            <ArchiveIcon class="size-3.5" />
+            {{ archiving ? 'Archiving…' : 'Archive' }}
+          </Button>
+
+          <!-- Unarchive: only for archived tickets -->
+          <Button
+            v-if="issue.archived_at"
+            variant="outline"
+            size="sm"
+            class="gap-1.5 text-muted-foreground hover:text-foreground"
+            :disabled="unarchiving"
+            @click="handleUnarchive"
+          >
+            <ArchiveRestoreIcon class="size-3.5" />
+            {{ unarchiving ? 'Restoring…' : 'Unarchive' }}
+          </Button>
         </div>
       </div>
 
@@ -709,6 +827,12 @@ async function handleRegenerate(): Promise<void> {
         </AlertDialogContent>
       </AlertDialog>
     </SheetContent>
+
+    <CreateIssueDialog
+      v-model:open="followUpDialogOpen"
+      :prefill="followUpPrefill"
+      @created="handleFollowUpCreated"
+    />
   </Sheet>
 </template>
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { usePage, Link, router } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon } from '@lucide/vue'
+import { MoonIcon, SunIcon, MenuIcon, LogOutIcon, UserIcon, TagIcon, BrainCircuitIcon, CircleDotIcon } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -65,14 +65,28 @@ function handleLogout(): void {
       </Link>
     </Button>
 
+    <!-- Status Management -->
+    <Button
+      as-child
+      variant="ghost"
+      size="icon"
+      aria-label="Manage statuses"
+    >
+      <Link href="/settings/statuses">
+        <CircleDotIcon class="size-5" />
+      </Link>
+    </Button>
+
     <!-- Manage Categories -->
     <Button
+      as-child
       variant="ghost"
       size="icon"
       aria-label="Manage categories"
-      @click="onOpenCategories?.()"
     >
-      <TagIcon class="size-5" />
+      <Link href="/settings/categories">
+        <TagIcon class="size-5" />
+      </Link>
     </Button>
 
     <!-- Dark mode toggle -->

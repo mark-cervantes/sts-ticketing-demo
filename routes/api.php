@@ -2,18 +2,36 @@
 
 use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\CommentReactionController;
+use App\Http\Controllers\Api\IssueChatController;
+use App\Http\Controllers\Api\IssueConversationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\IssueArchiveController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\IssueSseController;
 use App\Http\Controllers\ShareController;
+use App\Http\Controllers\StatusController;
 use Illuminate\Support\Facades\Route;
+
+// AI Chat — tool confirmation + suggestions
+// MUST be declared BEFORE the apiResource wildcard to avoid the {issue} segment
+// swallowing "chat" as an suggestions ID (same precedent as triage-suggest below).
+Route::middleware('auth')->group(function () {
+    Route::get('chat/suggestions', [IssueChatController::class, 'suggestions']);
+});
+
+// Archive — bulk-archive MUST be declared BEFORE the apiResource wildcard to avoid
+// the {issue} segment swallowing "bulk-archive" as an issue ID (same precedent as triage-suggest).
+Route::middleware('auth')->post('issues/bulk-archive', [IssueArchiveController::class, 'bulkArchive']);
 
 Route::middleware('auth')->apiResource('issues', IssueController::class);
 
 Route::middleware('auth')->post('issues/{issue}/comments', [CommentController::class, 'store']);
 
 Route::middleware('auth')->apiResource('categories', CategoryController::class)->only(['index', 'store', 'destroy']);
+
+Route::middleware('auth')->apiResource('statuses', StatusController::class)->only(['index', 'store', 'update', 'destroy']);
+Route::middleware('auth')->post('statuses/{status}/migrate-and-delete', [StatusController::class, 'migrateAndDelete']);
 
 Route::middleware('auth')->get('issues/{issue}/stream', IssueSseController::class);
 
@@ -23,6 +41,12 @@ Route::middleware('auth')->apiResource('issues.shares', ShareController::class)-
 Route::middleware('auth')->group(function () {
     Route::post('comments/{comment}/reactions', [CommentReactionController::class, 'toggle']);
     Route::get('comments/{comment}/reactions', [CommentReactionController::class, 'index']);
+});
+
+// Archive — per-issue archive and unarchive actions
+Route::middleware('auth')->group(function () {
+    Route::patch('issues/{issue}/archive', [IssueArchiveController::class, 'archive']);
+    Route::patch('issues/{issue}/unarchive', [IssueArchiveController::class, 'unarchive']);
 });
 
 // AI — regenerate summary + triage suggestions
@@ -40,4 +64,21 @@ Route::middleware('auth')->group(function () {
     Route::post('settings/ai/test', [AiSettingsController::class, 'test']);
     Route::get('settings/ai/models', [AiSettingsController::class, 'models']);
     Route::get('settings/ai/presets', [AiSettingsController::class, 'presets']);
+});
+
+// AI Chat — stateless streaming + saved conversations
+Route::middleware('auth')->group(function () {
+    // Stateless chat (ephemeral, nothing persisted)
+    Route::post('issues/{issue}/chat', [IssueChatController::class, 'chat'])
+        ->middleware('throttle:chat');
+
+    // Tool confirmation — executes a tool after user explicit confirmation
+    Route::post('issues/{issue}/chat/tool-confirm', [IssueChatController::class, 'confirmTool']);
+
+    // Saved conversations
+    Route::get('issues/{issue}/conversations', [IssueConversationController::class, 'listConversations']);
+    Route::post('issues/{issue}/conversations', [IssueConversationController::class, 'saveConversation']);
+    Route::get('issues/{issue}/conversations/{conversation}', [IssueConversationController::class, 'showConversation']);
+    Route::post('issues/{issue}/conversations/{conversation}/continue', [IssueConversationController::class, 'continueConversation'])
+        ->middleware('throttle:chat');
 });

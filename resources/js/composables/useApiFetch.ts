@@ -60,6 +60,19 @@ export async function apiPatch(url: string, body: Record<string, unknown>): Prom
   })
 }
 
+export async function apiPut(url: string, body: Record<string, unknown>): Promise<Response> {
+  return fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-XSRF-TOKEN': getCsrfToken(),
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  })
+}
+
 export async function apiDelete(url: string): Promise<Response> {
   return fetch(url, {
     method: 'DELETE',
