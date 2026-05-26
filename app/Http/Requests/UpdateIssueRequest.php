@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Enums\Priority;
-use App\Enums\Status;
 use App\Enums\Visibility;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -37,7 +36,7 @@ class UpdateIssueRequest extends FormRequest
             'title' => ['sometimes', 'nullable', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string'],
             'priority' => ['sometimes', 'nullable', 'string', Rule::enum(Priority::class)],
-            'status' => ['sometimes', 'nullable', 'string', Rule::enum(Status::class)],
+            'status_id' => ['sometimes', 'nullable', 'integer', 'exists:statuses,id'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
             'visibility' => ['sometimes', 'nullable', 'string', Rule::enum(Visibility::class)],
             'deadline_at' => ['sometimes', 'nullable', 'date', 'after:now'],

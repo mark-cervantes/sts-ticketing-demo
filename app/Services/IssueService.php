@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\SummaryStatus;
 use App\Jobs\GenerateSummaryJob;
 use App\Models\Issue;
+use App\Models\IssueStatus;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Response;
@@ -35,13 +36,13 @@ class IssueService
             'visibility' => $data['visibility'] ?? 'private',
             'deadline_at' => $data['deadline_at'] ?? null,
             // Defaults
-            'status' => 'open',
+            'status_id' => IssueStatus::where('is_default', true)->value('id'),
             'summary_status' => 'pending',
         ]);
 
         dispatch(new GenerateSummaryJob($issue));
 
-        return $issue->load(['category', 'user']);
+        return $issue->load(['category', 'user', 'status']);
     }
 
     /**
@@ -70,7 +71,7 @@ class IssueService
             && $data['description'] !== $issue->description;
 
         // Apply only the fields that were supplied
-        $fillable = ['title', 'description', 'priority', 'status', 'category_id', 'visibility', 'deadline_at'];
+        $fillable = ['title', 'description', 'priority', 'status_id', 'category_id', 'visibility', 'deadline_at'];
 
         foreach ($fillable as $field) {
             if (array_key_exists($field, $data) && $data[$field] !== null) {
@@ -95,7 +96,7 @@ class IssueService
             dispatch(new GenerateSummaryJob($issue));
         }
 
-        return $issue->load(['category', 'user']);
+        return $issue->load(['category', 'user', 'status']);
     }
 
     /**

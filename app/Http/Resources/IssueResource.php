@@ -28,7 +28,17 @@ class IssueResource extends JsonResource
             'title' => $this->title,
             'description' => $this->description,
             'priority' => $this->priority->value,
-            'status' => $this->status->value,
+            // Backward compat: emit slug as 'status' string (frontend currently reads this)
+            'status' => $this->status->slug,
+            'status_id' => $this->status_id,
+            'status_obj' => [
+                'id' => $this->status->id,
+                'name' => $this->status->name,
+                'slug' => $this->status->slug,
+                'color' => $this->status->color,
+                'sort_order' => $this->status->sort_order,
+                'is_default' => $this->status->is_default,
+            ],
             'visibility' => $this->visibility->value,
             'summary_status' => $this->summary_status->value,
             'summary' => $this->summary,
