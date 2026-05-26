@@ -224,7 +224,15 @@ export function useKanbanBoard() {
     try {
       const results = await Promise.all(
         statuses.value.map((s) =>
-          fetchColumn(s.slug, 1, filters.value.priorities, filters.value.category),
+          fetchColumn(
+            s.slug,
+            1,
+            filters.value.priorities,
+            filters.value.category,
+            // Resolved column gets a smaller initial page (10) so the collapsed
+            // state is cheap — the server still returns meta.total for the badge.
+            s.slug === 'resolved' ? 10 : PER_PAGE,
+          ),
         ),
       )
 
