@@ -92,8 +92,8 @@ function setCategory(slug: string | null): void {
  * Toggle "My Tickets" client-side filter.
  * Persists state to localStorage immediately.
  */
-function toggleMyTickets(): void {
-  myTickets.value = !myTickets.value
+function toggleMyTickets(value?: boolean): void {
+  myTickets.value = value !== undefined ? value : !myTickets.value
   try {
     localStorage.setItem('kanban-filter-my-tickets', myTickets.value ? 'true' : 'false')
   } catch {

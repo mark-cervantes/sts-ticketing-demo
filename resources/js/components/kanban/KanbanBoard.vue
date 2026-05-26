@@ -175,8 +175,8 @@ async function handleColumnDeleted(): Promise<void> {
 
 <template>
   <div class="relative">
-    <!-- Edit mode toggle — floated top-right, zero vertical cost -->
-    <div class="absolute right-4 top-3 z-10 flex items-center gap-1.5">
+    <!-- Edit mode toggle — top-right, tight to corner, subtle bg -->
+    <div class="absolute right-1.5 top-1.5 z-10 flex items-center gap-1">
       <LoaderCircleIcon
         v-if="reorderLoading"
         class="size-3.5 animate-spin text-muted-foreground"
@@ -184,7 +184,10 @@ async function handleColumnDeleted(): Promise<void> {
       <Button
         variant="ghost"
         size="icon-sm"
-        :class="editMode ? 'text-primary' : 'text-muted-foreground'"
+        class="rounded-md"
+        :class="editMode
+          ? 'bg-primary/10 text-primary hover:bg-primary/20'
+          : 'bg-muted/80 text-muted-foreground hover:bg-muted'"
         :title="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
         :aria-label="editMode ? 'Lock columns (exit edit mode)' : 'Edit columns'"
         :aria-pressed="editMode"
