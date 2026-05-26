@@ -16,13 +16,11 @@ import {
   EyeIcon,
   EyeOffIcon,
   LoaderIcon,
-  ChevronDownIcon,
-  SearchIcon,
-  ZapIcon,
   Check,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { apiFetch, getCsrfToken } from '@/composables/useApiFetch'
+import ModelCombobox from '@/components/settings/ModelCombobox.vue'
 
 defineOptions({ layout: AppLayout })
 
@@ -68,25 +66,6 @@ interface TestResult {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Popular models curated list
-// ─────────────────────────────────────────────────────────────
-
-const POPULAR_MODELS = [
-  'google/gemini-2.5-flash',
-  'google/gemini-2.5-pro',
-  'anthropic/claude-sonnet-4',
-  'anthropic/claude-haiku-4',
-  'openai/gpt-4.1-mini',
-  'openai/gpt-4.1-nano',
-  'meta-llama/llama-4-maverick',
-  'deepseek/deepseek-chat-v3-0324',
-  'deepseek/deepseek-r1',
-  'qwen/qwen3-30b-a3b',
-  'mistralai/mistral-small-3.2',
-  'google/gemma-3-27b-it',
-]
-
-// ─────────────────────────────────────────────────────────────
 // State
 // ─────────────────────────────────────────────────────────────
 
@@ -95,16 +74,11 @@ const saving = ref(false)
 const testing = ref(false)
 const showApiKey = ref(false)
 const newApiKey = ref('')
-const showAllModels = ref(false)
-const showFreeOnly = ref(false)
-const modelSearch = ref('')
-const modelDropdownOpen = ref(false)
 
 const currentSettings = ref<AiSettingsData | null>(null)
 const availablePresets = ref<AiPreset[]>([])
 
 // Selection mode: 'preset:<key>' | 'rules' | 'custom'
-// We track this separately from the underlying provider to drive the UI.
 const selectionMode = ref<string>('rules')
 
 // Form state for custom / manual mode
@@ -113,7 +87,6 @@ const selectedBaseUrl = ref('')
 const selectedModel = ref('')
 
 // Preset model override — pre-filled with the preset's default, editable by the user.
-// Empty string means "use the preset default" — only sent to the server when changed.
 const presetModelOverride = ref('')
 
 // Models list from OpenRouter
@@ -135,38 +108,26 @@ const isPresetMode = computed(() => activePresetKey.value !== null)
 
 const isCustomMode = computed(() => selectionMode.value === 'custom')
 
-const showConfigPanel = computed(() => isCustomMode.value && selectedProvider.value !== 'rules')
-
 const showBaseUrlField = computed(() => selectedProvider.value === 'custom')
 
-const showModelTextInput = computed(() => selectedProvider.value === 'custom')
+// Plain text input for non-openrouter providers (Ollama, Custom endpoint)
+const showModelTextInput = computed(
+  () => selectedProvider.value !== 'openrouter',
+)
 
-const filteredModels = computed(() => {
-  let models = openRouterModels.value
+// Show the ModelCombobox only for openrouter
+const showModelCombobox = computed(
+  () => selectedProvider.value === 'openrouter',
+)
 
-  if (!showAllModels.value) {
-    models = models.filter((m) => POPULAR_MODELS.includes(m.id))
-  }
+// Determine whether the active preset's provider is openrouter
+const activePreset = computed(() =>
+  availablePresets.value.find((p) => p.key === activePresetKey.value) ?? null,
+)
 
-  if (showFreeOnly.value) {
-    models = models.filter((m) => m.pricing?.prompt === '0')
-  }
-
-  if (modelSearch.value.trim()) {
-    const q = modelSearch.value.toLowerCase()
-    models = models.filter(
-      (m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q),
-    )
-  }
-
-  return models
-})
-
-const selectedModelLabel = computed(() => {
-  if (!selectedModel.value) return 'Select a model…'
-  const found = openRouterModels.value.find((m) => m.id === selectedModel.value)
-  return found ? found.name : selectedModel.value
-})
+const presetIsOpenRouter = computed(
+  () => activePreset.value?.provider === 'openrouter',
+)
 
 const lastUpdatedText = computed(() => {
   if (!currentSettings.value?.updated_by || !currentSettings.value?.updated_at) return null
@@ -195,7 +156,6 @@ async function loadPresets(): Promise<void> {
     const resp = await apiFetch<{ data: AiPreset[] }>('/api/settings/ai/presets')
     availablePresets.value = resp.data
   } catch {
-    // Non-fatal — presets just won't show
     availablePresets.value = []
   }
 }
@@ -206,10 +166,8 @@ async function loadSettings(): Promise<void> {
     const resp = await apiFetch<{ data: AiSettingsData }>('/api/settings/ai')
     currentSettings.value = resp.data
 
-    // Determine selection mode from saved state
     if (resp.data.active_preset) {
       selectionMode.value = `preset:${resp.data.active_preset}`
-      // Pre-fill model override with the currently saved model (which may already be overridden).
       presetModelOverride.value = resp.data.model ?? ''
     } else if (resp.data.provider === 'rules') {
       selectionMode.value = 'rules'
@@ -219,10 +177,7 @@ async function loadSettings(): Promise<void> {
       selectedBaseUrl.value = resp.data.base_url ?? ''
       selectedModel.value = resp.data.model ?? ''
     }
-
-    if (resp.data.provider === 'openrouter' && !resp.data.active_preset) {
-      void loadOpenRouterModels()
-    }
+    // NOTE: models are now lazy-loaded on combobox open, not here.
   } catch {
     toast.error('Failed to load AI settings')
   } finally {
@@ -231,7 +186,10 @@ async function loadSettings(): Promise<void> {
 }
 
 async function loadOpenRouterModels(): Promise<void> {
+  // Idempotency guards: already loading or already fetched
   if (modelsLoading.value) return
+  if (openRouterModels.value.length > 0) return
+
   modelsLoading.value = true
   try {
     const resp = await apiFetch<{ data: OpenRouterModel[] }>('/api/settings/ai/models')
@@ -248,7 +206,6 @@ async function loadOpenRouterModels(): Promise<void> {
 function selectPreset(presetKey: string): void {
   selectionMode.value = `preset:${presetKey}`
   testResult.value = null
-  // Pre-fill with the preset's default model so the user can see and optionally change it.
   const preset = availablePresets.value.find((p) => p.key === presetKey)
   presetModelOverride.value = preset?.model ?? ''
 }
@@ -272,23 +229,18 @@ function onModeChange(value: string | number | bigint | Record<string, unknown> 
 function onCustomProviderChange(value: string | number | bigint | Record<string, unknown> | null): void {
   const provider = value as 'rules' | 'openrouter' | 'ollama' | 'custom'
   selectedProvider.value = provider
+  selectedModel.value = ''
 
   if (provider === 'openrouter') {
     selectedBaseUrl.value = 'https://openrouter.ai/api/v1'
-    void loadOpenRouterModels()
+    // Reset so combobox lazy-load can fire again if user switches away and back
+    openRouterModels.value = []
   } else if (provider === 'custom') {
     selectedBaseUrl.value = ''
   } else {
     selectedBaseUrl.value = ''
-    selectedModel.value = ''
   }
   testResult.value = null
-}
-
-function selectModel(modelId: string): void {
-  selectedModel.value = modelId
-  modelDropdownOpen.value = false
-  modelSearch.value = ''
 }
 
 async function save(): Promise<void> {
@@ -300,8 +252,6 @@ async function save(): Promise<void> {
     let body: Record<string, unknown>
 
     if (isPresetMode.value && activePresetKey.value) {
-      // Preset mode — server resolves provider/base_url/api_key from config.
-      // Include the model if the user changed it from the preset default.
       const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
       body = { preset: activePresetKey.value }
       if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
@@ -310,7 +260,6 @@ async function save(): Promise<void> {
     } else if (selectionMode.value === 'rules') {
       body = { provider: 'rules' }
     } else {
-      // Custom / manual mode
       body = { provider: selectedProvider.value }
       if (selectedProvider.value !== 'rules') {
         if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
@@ -353,13 +302,10 @@ async function testConnection(): Promise<void> {
   testResult.value = null
 
   try {
-    // Build the test body. For preset mode, send the preset key so the server
-    // resolves the correct provider/api_key server-side (test-before-save).
     const body: Record<string, unknown> = {}
 
     if (isPresetMode.value && activePresetKey.value) {
       body.preset = activePresetKey.value
-      // Include model override if the user changed it from the preset default.
       const preset = availablePresets.value.find((p) => p.key === activePresetKey.value)
       if (presetModelOverride.value && presetModelOverride.value !== preset?.model) {
         body.model = presetModelOverride.value
@@ -367,7 +313,6 @@ async function testConnection(): Promise<void> {
     } else if (selectionMode.value === 'rules') {
       body.provider = 'rules'
     } else {
-      // Custom mode — include unsaved field overrides.
       body.provider = selectedProvider.value
       if (selectedBaseUrl.value) body.base_url = selectedBaseUrl.value
       if (selectedModel.value) body.model = selectedModel.value
@@ -402,19 +347,6 @@ async function testConnection(): Promise<void> {
   } finally {
     testing.value = false
   }
-}
-
-function formatPrice(price: string): string {
-  if (price === '0') return 'Free'
-  const n = parseFloat(price)
-  if (isNaN(n)) return price
-  return `$${(n * 1_000_000).toFixed(2)}/M`
-}
-
-function formatContext(length: number): string {
-  if (length >= 1_000_000) return `${(length / 1_000_000).toFixed(0)}M ctx`
-  if (length >= 1_000) return `${(length / 1_000).toFixed(0)}K ctx`
-  return `${length} ctx`
 }
 </script>
 
@@ -587,13 +519,27 @@ function formatContext(length: number): string {
                       Model
                       <span class="ml-1 font-normal text-muted-foreground">(default: {{ preset.model }})</span>
                     </Label>
+
+                    <!-- ModelCombobox for OpenRouter presets -->
+                    <ModelCombobox
+                      v-if="presetIsOpenRouter"
+                      v-model="presetModelOverride"
+                      :models="openRouterModels"
+                      :loading="modelsLoading"
+                      :placeholder="preset.model"
+                      :on-open="loadOpenRouterModels"
+                    />
+
+                    <!-- Plain text input for non-OpenRouter presets -->
                     <Input
+                      v-else
                       id="preset-model-override"
                       v-model="presetModelOverride"
                       type="text"
                       :placeholder="preset.model"
                       class="h-8 font-mono text-xs bg-background"
                     />
+
                     <p class="text-xs text-muted-foreground">
                       Leave as-is to use the preset default, or type a different model ID to override.
                     </p>
@@ -666,14 +612,14 @@ function formatContext(length: number): string {
             </p>
           </div>
 
-          <!-- Base URL -->
-          <div class="space-y-1.5">
+          <!-- Base URL (only for custom endpoint type) -->
+          <div v-if="showBaseUrlField" class="space-y-1.5">
             <Label for="base-url" class="text-sm font-medium">Base URL</Label>
             <Input
               id="base-url"
               v-model="selectedBaseUrl"
               type="url"
-              :placeholder="selectedProvider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'http://localhost:11434/v1'"
+              placeholder="http://localhost:11434/v1"
               class="font-mono text-sm"
             />
             <p class="text-xs text-muted-foreground">
@@ -681,125 +627,66 @@ function formatContext(length: number): string {
             </p>
           </div>
 
+          <!-- Base URL for OpenRouter (always shown, pre-filled) -->
+          <div v-else-if="selectedProvider === 'openrouter'" class="space-y-1.5">
+            <Label for="base-url" class="text-sm font-medium">Base URL</Label>
+            <Input
+              id="base-url"
+              v-model="selectedBaseUrl"
+              type="url"
+              placeholder="https://openrouter.ai/api/v1"
+              class="font-mono text-sm"
+            />
+            <p class="text-xs text-muted-foreground">
+              OpenAI-compatible endpoint. Leave blank to use the provider default.
+            </p>
+          </div>
+
+          <!-- Base URL for Ollama -->
+          <div v-else-if="selectedProvider === 'ollama'" class="space-y-1.5">
+            <Label for="base-url" class="text-sm font-medium">Base URL</Label>
+            <Input
+              id="base-url"
+              v-model="selectedBaseUrl"
+              type="url"
+              placeholder="http://localhost:11434/v1"
+              class="font-mono text-sm"
+            />
+            <p class="text-xs text-muted-foreground">
+              Ollama endpoint. Defaults to localhost if left blank.
+            </p>
+          </div>
+
           <Separator />
 
-          <!-- Model — text input for non-openrouter custom -->
-          <div v-if="showModelTextInput || selectedProvider !== 'openrouter'" class="space-y-1.5">
+          <!-- Model — ModelCombobox for OpenRouter -->
+          <div v-if="showModelCombobox" class="space-y-1.5">
+            <Label class="text-sm font-medium">Model</Label>
+            <ModelCombobox
+              v-model="selectedModel"
+              :models="openRouterModels"
+              :loading="modelsLoading"
+              placeholder="google/gemini-2.5-flash"
+              :on-open="loadOpenRouterModels"
+            />
+            <p class="text-xs text-muted-foreground">
+              Search or type any OpenRouter model ID directly.
+            </p>
+          </div>
+
+          <!-- Model — plain text input for Ollama / custom endpoint -->
+          <div v-else-if="showModelTextInput" class="space-y-1.5">
             <Label for="model-input" class="text-sm font-medium">Model</Label>
             <Input
               id="model-input"
               v-model="selectedModel"
               type="text"
-              :placeholder="selectedProvider === 'openrouter' ? 'google/gemini-2.5-flash' : 'llama3.2:3b'"
+              :placeholder="selectedProvider === 'ollama' ? 'llama3.2:3b' : 'gpt-4o-mini'"
               class="font-mono text-sm"
             />
             <p class="text-xs text-muted-foreground">
               Model name as recognized by your endpoint.
             </p>
-          </div>
-
-          <!-- Model — searchable dropdown for OpenRouter -->
-          <div v-if="selectedProvider === 'openrouter' && openRouterModels.length > 0" class="space-y-1.5">
-            <div class="flex items-center justify-between">
-              <Label class="text-sm font-medium">Browse Models</Label>
-              <div class="flex items-center gap-3">
-                <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
-                  <input
-                    v-model="showFreeOnly"
-                    type="checkbox"
-                    class="size-3.5 rounded"
-                  />
-                  <ZapIcon class="size-3" />
-                  Free only
-                </label>
-                <button
-                  type="button"
-                  class="text-xs text-primary underline-offset-2 hover:underline"
-                  @click="showAllModels = !showAllModels"
-                >
-                  {{ showAllModels ? 'Show popular' : 'Show all models' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Dropdown trigger -->
-            <div class="relative">
-              <button
-                type="button"
-                class="flex w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                @click="modelDropdownOpen = !modelDropdownOpen"
-              >
-                <span class="truncate font-mono text-sm" :class="{ 'text-muted-foreground': !selectedModel }">
-                  {{ selectedModelLabel }}
-                </span>
-                <ChevronDownIcon class="ml-2 size-4 shrink-0 text-muted-foreground" :class="{ 'rotate-180': modelDropdownOpen }" />
-              </button>
-
-              <!-- Dropdown panel -->
-              <div
-                v-if="modelDropdownOpen"
-                class="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
-              >
-                <!-- Search -->
-                <div class="flex items-center border-b border-border px-3 py-2">
-                  <SearchIcon class="mr-2 size-3.5 shrink-0 text-muted-foreground" />
-                  <input
-                    v-model="modelSearch"
-                    type="text"
-                    placeholder="Search models…"
-                    class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                    @click.stop
-                  />
-                </div>
-
-                <!-- Loading state -->
-                <div v-if="modelsLoading" class="p-3 space-y-2">
-                  <Skeleton class="h-7 w-full" />
-                  <Skeleton class="h-7 w-full" />
-                  <Skeleton class="h-7 w-full" />
-                </div>
-
-                <!-- Model list -->
-                <div v-else-if="filteredModels.length > 0" class="max-h-64 overflow-y-auto">
-                  <button
-                    v-for="model in filteredModels"
-                    :key="model.id"
-                    type="button"
-                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-                    :class="{ 'bg-accent font-medium': selectedModel === model.id }"
-                    @click="selectModel(model.id)"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate font-mono text-xs text-foreground">{{ model.id }}</div>
-                      <div class="truncate text-xs text-muted-foreground">{{ model.name }}</div>
-                    </div>
-                    <div class="ml-2 flex shrink-0 items-center gap-1.5">
-                      <Badge
-                        v-if="model.pricing?.prompt === '0'"
-                        variant="secondary"
-                        class="text-xs py-0 h-4"
-                      >Free</Badge>
-                      <span v-else-if="model.pricing?.prompt" class="text-xs text-muted-foreground">
-                        {{ formatPrice(model.pricing.prompt) }}
-                      </span>
-                      <span v-if="model.context_length" class="text-xs text-muted-foreground">
-                        {{ formatContext(model.context_length) }}
-                      </span>
-                    </div>
-                  </button>
-                </div>
-
-                <!-- Empty state -->
-                <div v-else class="p-4 text-center text-sm text-muted-foreground">
-                  <template v-if="openRouterModels.length === 0">
-                    Save an OpenRouter API key first to fetch models.
-                  </template>
-                  <template v-else>
-                    No models match your search.
-                  </template>
-                </div>
-              </div>
-            </div>
           </div>
         </CardContent>
       </Card>
